@@ -1,0 +1,104 @@
+services:
+  - type: web
+    name: reboxify-api
+    runtime: node
+    rootDir: backend
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DEFAULT_CURRENCY
+        value: USD
+      - key: PAYPAL_ENV
+        value: sandbox
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: QR_SIGNING_SECRET
+        generateValue: true
+      - key: CORS_ORIGIN
+        sync: false
+      - key: APP_BASE_URL
+        sync: false
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: ELASTICSEARCH_URL
+        sync: false
+      - key: ELASTICSEARCH_API_KEY
+        sync: false
+
+  - type: worker
+    name: reboxify-worker
+    runtime: node
+    rootDir: backend
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start:worker
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DEFAULT_CURRENCY
+        value: USD
+      - key: PAYPAL_ENV
+        value: sandbox
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: QR_SIGNING_SECRET
+        generateValue: true
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
+      - key: OUTBOX_POLL_INTERVAL_MS
+        value: "5000"
+      - key: RECONCILE_INTERVAL_MS
+        value: "60000"
+      - key: PENDING_RECONCILE_MIN_AGE_MS
+        value: "120000"
+      - key: WORKER_LEASE_TTL_MS
+        value: "90000"
+      - key: WORKER_MAX_BACKOFF_MS
+        value: "300000"
+      - key: WEBHOOK_MAX_RETRIES
+        value: "5"
+      - key: ELASTICSEARCH_URL
+        sync: false
+      - key: ELASTICSEARCH_API_KEY
+        sync: false
+
+  - type: web
+    name: reboxify-web
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_BASE_URL
+        sync: false
+      - key: VITE_PAYPAL_CLIENT_ID
+        sync: false
+      - key: VITE_APP_CURRENCY
+        value: USD
+

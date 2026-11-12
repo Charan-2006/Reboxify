@@ -7,9 +7,26 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Environment files (never commit secrets)
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Private npm auth (e.g. Bryntum registry token)
+.npmrc
+**/.npmrc
+
+# Dependencies & Build outputs
 node_modules
+**/node_modules
 dist
+**/dist
 dist-ssr
+coverage
+**/coverage
 *.local
 
 # Editor directories and files
