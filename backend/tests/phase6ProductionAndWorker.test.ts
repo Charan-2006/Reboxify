@@ -1304,4 +1304,22 @@ describe('Phase 6 — Production Config, Replica-Set Enforcement, Zero-Refunds, 
     expect(devRes.body.integrations.pickupSchedulerConfigured).toBe(true);
     expect(devRes.body.worker).toEqual({ status: 'NOT_DETECTED' });
   });
+
+  it('parses ENABLE_EMBEDDED_WORKER and strips trailing slashes from APP_BASE_URL and CORS_ORIGIN', () => {
+    const defaultCfg = loadConfig({ NODE_ENV: 'development' });
+    expect(defaultCfg.enableEmbeddedWorker).toBe(false);
+
+    const enabledCfg = loadConfig({
+      NODE_ENV: 'development',
+      APP_BASE_URL: 'https://reboxify-api.onrender.com/',
+      CORS_ORIGIN: 'https://reboxify-web.onrender.com/, https://reboxify.vercel.app/',
+      ENABLE_EMBEDDED_WORKER: 'true',
+    });
+    expect(enabledCfg.enableEmbeddedWorker).toBe(true);
+    expect(enabledCfg.appBaseUrl).toBe('https://reboxify-api.onrender.com');
+    expect(enabledCfg.corsOrigins).toEqual([
+      'https://reboxify-web.onrender.com',
+      'https://reboxify.vercel.app',
+    ]);
+  });
 });

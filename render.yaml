@@ -2,6 +2,7 @@ services:
   - type: web
     name: reboxify-api
     runtime: node
+    plan: free
     rootDir: backend
     buildCommand: npm ci && npm run build
     startCommand: npm start
@@ -45,36 +46,12 @@ services:
         sync: false
       - key: ELASTICSEARCH_INDEX_PREFIX
         value: reboxify
+      - key: ELASTICSEARCH_REQUEST_TIMEOUT_MS
+        value: "5000"
       - key: AI_RATE_LIMIT_MAX_PER_MIN
         value: "20"
-
-  - type: worker
-    name: reboxify-worker
-    runtime: node
-    rootDir: backend
-    buildCommand: npm ci && npm run build
-    startCommand: npm run start:worker
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: DEFAULT_CURRENCY
-        value: USD
-      - key: PAYPAL_ENV
-        value: sandbox
-      - key: MONGODB_URI
-        sync: false
-      - key: JWT_SECRET
-        generateValue: true
-      - key: SESSION_SECRET
-        generateValue: true
-      - key: QR_SIGNING_SECRET
-        generateValue: true
-      - key: PAYPAL_CLIENT_ID
-        sync: false
-      - key: PAYPAL_CLIENT_SECRET
-        sync: false
-      - key: PAYPAL_WEBHOOK_ID
-        sync: false
+      - key: ENABLE_EMBEDDED_WORKER
+        value: "true"
       - key: OUTBOX_POLL_INTERVAL_MS
         value: "5000"
       - key: RECONCILE_INTERVAL_MS
@@ -87,18 +64,6 @@ services:
         value: "300000"
       - key: WEBHOOK_MAX_RETRIES
         value: "5"
-      - key: ELASTICSEARCH_URL
-        sync: false
-      - key: ELASTICSEARCH_API_KEY
-        sync: false
-      - key: ELASTICSEARCH_USERNAME
-        sync: false
-      - key: ELASTICSEARCH_PASSWORD
-        sync: false
-      - key: ELASTICSEARCH_INDEX_PREFIX
-        value: reboxify
-      - key: AI_RATE_LIMIT_MAX_PER_MIN
-        value: "20"
 
   - type: web
     name: reboxify-web
@@ -117,4 +82,3 @@ services:
         sync: false
       - key: VITE_APP_CURRENCY
         value: USD
-

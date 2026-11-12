@@ -29,6 +29,7 @@ const envSchema = z.object({
   ELASTICSEARCH_INDEX_PREFIX: z.string().min(1).max(32).default('reboxify'),
   ELASTICSEARCH_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(500).max(30000).default(5000),
   AI_RATE_LIMIT_MAX_PER_MIN: z.coerce.number().int().min(1).max(200).default(20),
+  ENABLE_EMBEDDED_WORKER: z.enum(['true', 'false', '1', '0']).optional(),
   OUTBOX_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(5000),
   RECONCILE_INTERVAL_MS: z.coerce.number().int().positive().default(60000),
   PENDING_RECONCILE_MIN_AGE_MS: z.coerce.number().int().positive().default(120000),
@@ -72,6 +73,7 @@ export interface AppConfig {
   elasticsearchIndexPrefix: string;
   elasticsearchRequestTimeoutMs: number;
   aiRateLimitMaxPerMin: number;
+  enableEmbeddedWorker: boolean;
   outboxPollIntervalMs: number;
   reconcileIntervalMs: number;
   pendingReconcileMinAgeMs: number;
@@ -126,8 +128,9 @@ export function loadConfig(
   }
 
   const corsOrigins = parsed.CORS_ORIGIN.split(',')
-    .map((origin) => origin.trim())
+    .map((origin) => origin.trim().replace(/\/+$/, ''))
     .filter(Boolean);
+  const appBaseUrl = parsed.APP_BASE_URL.trim().replace(/\/+$/, '');
 
   const mongodbUri = parsed.MONGODB_URI?.trim() || undefined;
   const paypalClientId = parsed.PAYPAL_CLIENT_ID?.trim() || undefined;
@@ -153,7 +156,7 @@ export function loadConfig(
   return {
     nodeEnv,
     port: parsed.PORT,
-    appBaseUrl: parsed.APP_BASE_URL,
+    appBaseUrl,
     corsOrigins,
     jwtSecret: resolveSecret(parsed.JWT_SECRET, 'JWT_SECRET', nodeEnv),
     sessionSecret: resolveSecret(parsed.SESSION_SECRET, 'SESSION_SECRET', nodeEnv),
@@ -177,6 +180,8 @@ export function loadConfig(
     elasticsearchIndexPrefix,
     elasticsearchRequestTimeoutMs: parsed.ELASTICSEARCH_REQUEST_TIMEOUT_MS,
     aiRateLimitMaxPerMin: parsed.AI_RATE_LIMIT_MAX_PER_MIN,
+    enableEmbeddedWorker:
+      parsed.ENABLE_EMBEDDED_WORKER === 'true' || parsed.ENABLE_EMBEDDED_WORKER === '1',
     outboxPollIntervalMs: parsed.OUTBOX_POLL_INTERVAL_MS,
     reconcileIntervalMs: parsed.RECONCILE_INTERVAL_MS,
     pendingReconcileMinAgeMs: parsed.PENDING_RECONCILE_MIN_AGE_MS,
