@@ -1296,12 +1296,12 @@ describe('Phase 6 — Production Config, Replica-Set Enforcement, Zero-Refunds, 
     expect(leaseState.holder).toBeNull();
   });
 
-  it('reports truthful scheduler status (NOT_IMPLEMENTED) and distinct worker health on /api/health', async () => {
+  it('reports truthful scheduler status (COMMUNITY_READY) and distinct worker health on /api/health', async () => {
     const h = buildPhase6Harness();
     const devRes = await request(h.app).get('/api/health');
     expect(devRes.status).toBe(200);
-    expect(devRes.body.integrations.bryntumSchedulerMode).toBe('NOT_IMPLEMENTED');
-    expect(devRes.body.integrations.pickupSchedulerConfigured).toBe(false);
+    expect(devRes.body.integrations.bryntumSchedulerMode).toBe('COMMUNITY_READY');
+    expect(devRes.body.integrations.pickupSchedulerConfigured).toBe(true);
     expect(devRes.body.worker).toEqual({ status: 'NOT_DETECTED' });
   });
 });

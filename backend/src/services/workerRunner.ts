@@ -3,6 +3,11 @@ import mongoose from 'mongoose';
 import { WorkerLeaseModel } from '../models/WorkerLease.js';
 import { PaymentService } from './paymentService.js';
 import { ReturnService } from './returnService.js';
+import {
+  OutboxProcessSummary,
+  SearchSyncService,
+  defaultSearchSyncService,
+} from './searchSyncService.js';
 import { WebhookService } from './webhookService.js';
 
 export interface WorkerLeaseStore {
@@ -104,6 +109,7 @@ export interface WorkerCycleSummary {
   captures?: { checked: number; resolved: number; failed: number };
   refunds?: { checked: number; resolved: number; failed: number };
   webhooks?: { checked: number; processed: number; ignored: number; failed: number };
+  search?: OutboxProcessSummary;
   error?: string;
   nextDelayMs: number;
 }
@@ -112,6 +118,7 @@ export interface WorkerRunnerDeps {
   paymentService?: Pick<PaymentService, 'reconcileStuckPendingCaptures'>;
   returnService?: Pick<ReturnService, 'reconcileStuckPendingRefunds'>;
   webhookService?: Pick<WebhookService, 'retryFailedWebhooks'>;
+  searchSyncService?: Pick<SearchSyncService, 'processPendingOutbox'>;
   leaseStore?: WorkerLeaseStore;
   jobName?: string;
   ownerId?: string;
@@ -131,6 +138,7 @@ export class WorkerRunner {
   private readonly paymentService: Pick<PaymentService, 'reconcileStuckPendingCaptures'>;
   private readonly returnService: Pick<ReturnService, 'reconcileStuckPendingRefunds'>;
   private readonly webhookService: Pick<WebhookService, 'retryFailedWebhooks'>;
+  private readonly searchSyncService: Pick<SearchSyncService, 'processPendingOutbox'>;
   private readonly leaseStore: WorkerLeaseStore;
   private readonly jobName: string;
   private readonly ownerId: string;
@@ -149,6 +157,7 @@ export class WorkerRunner {
     this.paymentService = deps.paymentService ?? new PaymentService();
     this.returnService = deps.returnService ?? new ReturnService();
     this.webhookService = deps.webhookService ?? new WebhookService();
+    this.searchSyncService = deps.searchSyncService ?? defaultSearchSyncService;
     this.leaseStore = deps.leaseStore ?? new MongooseWorkerLeaseStore();
     this.jobName = deps.jobName ?? 'reboxify-reconcile-worker';
     this.ownerId = deps.ownerId ?? `worker-${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
@@ -218,7 +227,15 @@ export class WorkerRunner {
       const captures = await this.paymentService.reconcileStuckPendingCaptures(this.minAgeMs);
       const refunds = await this.returnService.reconcileStuckPendingRefunds(this.minAgeMs);
       const webhooks = await this.webhookService.retryFailedWebhooks(20, this.webhookMaxRetries);
+      let search: OutboxProcessSummary;
+      try {
+        search = await this.searchSyncService.processPendingOutbox(50);
+      } catch {
+        search = { skipped: false, checked: 1, indexed: 0, deleted: 0, failed: 1 };
+      }
 
+      // Elasticsearch indexing failures use per-outbox nextRetryAt backoff so an ES outage
+      // never delays critical PayPal capture/refund reconciliation or webhook retries.
       const itemFailures = captures.failed + refunds.failed + webhooks.failed;
       if (itemFailures > 0) {
         this.consecutiveFailures += 1;
@@ -226,7 +243,12 @@ export class WorkerRunner {
         this.consecutiveFailures = 0;
       }
 
-      const summary = { captures, refunds, webhooks };
+      const summary = {
+        captures,
+        refunds,
+        webhooks,
+        ...(search.skipped ? {} : { search }),
+      };
       await this.leaseStore.recordOutcome(this.jobName, this.ownerId, {
         status: itemFailures > 0 ? 'ERROR' : 'OK',
         summary,
@@ -237,6 +259,7 @@ export class WorkerRunner {
         captures.checked > 0 ||
         refunds.checked > 0 ||
         webhooks.checked > 0 ||
+        (!search.skipped && search.checked > 0) ||
         itemFailures > 0
       ) {
         console.log('[reboxify-worker] Reconciliation cycle complete:', summary);
@@ -247,6 +270,7 @@ export class WorkerRunner {
         captures,
         refunds,
         webhooks,
+        search,
         nextDelayMs: this.computeNextDelayMs(this.consecutiveFailures),
       };
     } catch (err) {

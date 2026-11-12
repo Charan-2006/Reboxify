@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import mongoose, { ClientSession } from 'mongoose';
 import {
+  OrderModel,
   PackageEventModel,
   PackageModel,
   PickupModel,
@@ -33,6 +34,7 @@ export interface ReturnDto {
   id: string;
   returnNumber: string;
   orderId: string;
+  orderNumber?: string;
   packageRef: string;
   packageId: string;
   merchantId: string;
@@ -104,6 +106,12 @@ export interface ReturnDto {
     }>;
   };
   refundId?: string;
+  refundSummary?: {
+    refundId: string;
+    state: PaymentStatus;
+    amount: number;
+    providerRefundId?: string;
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -181,6 +189,10 @@ export interface ReturnRepository {
     customerId?: string;
     assignedPartnerUserId?: string;
     status?: ReturnStatus;
+    mode?: ReturnMode;
+    condition?: InspectionCondition;
+    refundStatus?: PaymentStatus;
+    search?: string;
     page: number;
     pageSize: number;
     sortBy?: string;
@@ -548,14 +560,18 @@ export class MongooseReturnRepository implements ReturnRepository {
         [
           {
             returnId: createdReturn._id,
+            orderId: new mongoose.Types.ObjectId(r.orderId),
             packageId: updatedPkg.packageId,
             merchantId: new mongoose.Types.ObjectId(r.merchantId),
+            customerId: new mongoose.Types.ObjectId(r.customerId),
             ...(r.collectionCenterId ? { collectionCenterId: toObjId(r.collectionCenterId) } : {}),
             slotStart: params.pickupRequest.slotStart,
             slotEnd: params.pickupRequest.slotEnd,
+            pickupMethod: r.mode === 'NEXT_DELIVERY_SWAP' ? 'NEXT_DELIVERY_SWAP' : 'PICKUP',
             serviceZone: params.pickupRequest.serviceZone,
             addressSummary: params.pickupRequest.addressSummary,
             status: 'UNASSIGNED',
+            createdBy: new mongoose.Types.ObjectId(r.customerId),
             version: 1,
           },
         ],
@@ -636,6 +652,10 @@ export class MongooseReturnRepository implements ReturnRepository {
     customerId?: string;
     assignedPartnerUserId?: string;
     status?: ReturnStatus;
+    mode?: ReturnMode;
+    condition?: InspectionCondition;
+    refundStatus?: PaymentStatus;
+    search?: string;
     page: number;
     pageSize: number;
     sortBy?: string;
@@ -656,6 +676,32 @@ export class MongooseReturnRepository implements ReturnRepository {
       query.assignedPartnerUserId = new mongoose.Types.ObjectId(filters.assignedPartnerUserId);
     }
     if (filters.status) query.status = filters.status;
+    if (filters.mode) query.mode = filters.mode;
+    if (filters.condition) query['inspection.condition'] = filters.condition;
+    if (filters.refundStatus) {
+      const matchingRefunds = await RefundModel.find({ state: filters.refundStatus })
+        .select('returnId')
+        .lean();
+      const returnIds = matchingRefunds.map((rf: any) => rf.returnId);
+      query._id = { $in: returnIds };
+    }
+    if (filters.search?.trim()) {
+      const escaped = filters.search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const matchingOrders = await OrderModel.find({
+        orderNumber: { $regex: escaped, $options: 'i' },
+      })
+        .select('_id')
+        .limit(50)
+        .lean();
+      const orderIds = matchingOrders.map((o: any) => o._id);
+      query.$or = [
+        { returnNumber: { $regex: escaped, $options: 'i' } },
+        { packageId: { $regex: escaped, $options: 'i' } },
+        { reason: { $regex: escaped, $options: 'i' } },
+        { assignedPartnerName: { $regex: escaped, $options: 'i' } },
+        ...(orderIds.length > 0 ? [{ orderId: { $in: orderIds } }] : []),
+      ];
+    }
 
     const allowedSort: Record<string, string> = {
       returnNumber: 'returnNumber',
@@ -675,8 +721,44 @@ export class MongooseReturnRepository implements ReturnRepository {
       ReturnModel.countDocuments(query),
     ]);
 
+    const items = docs.map(mapReturn);
+    if (items.length > 0) {
+      const orderObjectIds = Array.from(new Set(items.map((r) => r.orderId))).map(
+        (id) => new mongoose.Types.ObjectId(id)
+      );
+      const returnObjectIds = items.map((r) => new mongoose.Types.ObjectId(r.id));
+      const [orders, refunds] = await Promise.all([
+        OrderModel.find({ _id: { $in: orderObjectIds } })
+          .select('_id orderNumber')
+          .lean(),
+        RefundModel.find({ returnId: { $in: returnObjectIds } })
+          .select('_id returnId state amount providerRefundId')
+          .lean(),
+      ]);
+
+      const orderMap = new Map<string, string>(
+        orders.map((o: any) => [o._id.toString(), o.orderNumber as string])
+      );
+      const refundMap = new Map<string, any>(
+        refunds.map((rf: any) => [rf.returnId.toString(), rf])
+      );
+
+      for (const ret of items) {
+        ret.orderNumber = orderMap.get(ret.orderId);
+        const rf = refundMap.get(ret.id);
+        if (rf) {
+          ret.refundSummary = {
+            refundId: rf._id.toString(),
+            state: rf.state,
+            amount: rf.amount,
+            providerRefundId: rf.providerRefundId,
+          };
+        }
+      }
+    }
+
     return {
-      items: docs.map(mapReturn),
+      items,
       total,
       page: filters.page,
       pageSize: filters.pageSize,
@@ -742,6 +824,32 @@ export class MongooseReturnRepository implements ReturnRepository {
 
       if (pkgDoc) {
         updatedPackage = mapPackageDto(pkgDoc);
+      }
+    }
+
+    if (updatedReturn.pickupId) {
+      const pickupFilter: Record<string, unknown> = { _id: updatedReturn.pickupId };
+      if (params.returnSet.status === 'COLLECTED' || params.returnSet.status === 'RECEIVED') {
+        await PickupModel.updateOne(
+          { ...pickupFilter, status: { $nin: ['COMPLETED', 'CANCELLED'] } },
+          { $set: { status: 'COMPLETED' }, $inc: { version: 1 } },
+          { session: session ?? undefined }
+        );
+      } else if (typeof params.returnSet.assignedPartnerUserId === 'string') {
+        await PickupModel.updateOne(
+          { ...pickupFilter, status: { $in: ['UNASSIGNED', 'ASSIGNED', 'RESCHEDULED'] } },
+          {
+            $set: {
+              partnerId: toObjId(params.returnSet.assignedPartnerUserId),
+              ...(typeof params.returnSet.assignedPartnerName === 'string'
+                ? { assignedPartnerName: params.returnSet.assignedPartnerName }
+                : {}),
+              status: 'ASSIGNED',
+            },
+            $inc: { version: 1 },
+          },
+          { session: session ?? undefined }
+        );
       }
     }
 

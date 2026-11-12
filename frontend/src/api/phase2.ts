@@ -101,14 +101,30 @@ export function getPackageCatalogue(currency?: string) {
 }
 
 export function listInventory(
-  params: { status?: string; packageClass?: PackageClass; ownerType?: PackageOwnerType; page?: number; pageSize?: number } = {}
+  params: {
+    merchantId?: string;
+    status?: string;
+    packageClass?: PackageClass;
+    ownerType?: PackageOwnerType;
+    condition?: string;
+    search?: string;
+    page?: number;
+    pageSize?: number;
+    sortBy?: 'packageId' | 'packageClass' | 'status' | 'condition' | 'reuseCount' | 'updatedAt';
+    sortDir?: 'asc' | 'desc';
+  } = {}
 ) {
   const q = new URLSearchParams();
+  if (params.merchantId) q.set('merchantId', params.merchantId);
   if (params.status) q.set('status', params.status);
   if (params.packageClass) q.set('packageClass', params.packageClass);
   if (params.ownerType) q.set('ownerType', params.ownerType);
+  if (params.condition) q.set('condition', params.condition);
+  if (params.search) q.set('search', params.search);
   if (params.page) q.set('page', String(params.page));
   if (params.pageSize) q.set('pageSize', String(params.pageSize));
+  if (params.sortBy) q.set('sortBy', params.sortBy);
+  if (params.sortDir) q.set('sortDir', params.sortDir);
   const qs = q.toString() ? `?${q.toString()}` : '';
   return apiRequest<PaginatedResponse<PackageDto>>(`/api/inventory${qs}`);
 }
@@ -131,11 +147,25 @@ export function registerPackage(payload: {
   });
 }
 
-export function listOrders(params: { status?: string; page?: number; pageSize?: number } = {}) {
+export function listOrders(
+  params: {
+    merchantId?: string;
+    status?: string;
+    search?: string;
+    page?: number;
+    pageSize?: number;
+    sortBy?: 'orderNumber' | 'status' | 'grandTotal' | 'depositTotal' | 'createdAt' | 'updatedAt';
+    sortDir?: 'asc' | 'desc';
+  } = {}
+) {
   const q = new URLSearchParams();
+  if (params.merchantId) q.set('merchantId', params.merchantId);
   if (params.status) q.set('status', params.status);
+  if (params.search) q.set('search', params.search);
   if (params.page) q.set('page', String(params.page));
   if (params.pageSize) q.set('pageSize', String(params.pageSize));
+  if (params.sortBy) q.set('sortBy', params.sortBy);
+  if (params.sortDir) q.set('sortDir', params.sortDir);
   const qs = q.toString() ? `?${q.toString()}` : '';
   return apiRequest<PaginatedResponse<OrderDto>>(`/api/orders${qs}`);
 }

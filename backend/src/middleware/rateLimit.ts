@@ -1,4 +1,5 @@
 import rateLimit from 'express-rate-limit';
+import { config } from '../config/env.js';
 
 export const authRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -35,6 +36,19 @@ export const passportScanRateLimiter = rateLimit({
     error: {
       code: 'RATE_LIMITED',
       message: 'Too many passport or scan requests. Please try again shortly.',
+    },
+  },
+});
+
+export const aiRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: () => (config.nodeEnv === 'test' ? 100 : config.aiRateLimitMaxPerMin),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: {
+      code: 'RATE_LIMITED',
+      message: 'AI assistant rate limit reached. Please wait a minute before retrying.',
     },
   },
 });

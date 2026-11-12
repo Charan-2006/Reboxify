@@ -7,6 +7,7 @@ import { validateRequest, wrapAsync } from '../middleware/validate.js';
 import { ReturnService } from '../services/returnService.js';
 import {
   INSPECTION_CONDITIONS,
+  PAYMENT_STATUSES,
   RETURN_MODES,
   RETURN_STATUSES,
 } from '../types/domain.js';
@@ -35,6 +36,10 @@ const initiateReturnBody = z.object({
 
 const listReturnsQuery = z.object({
   status: z.enum(RETURN_STATUSES).optional(),
+  mode: z.enum(RETURN_MODES).optional(),
+  condition: z.enum(INSPECTION_CONDITIONS).optional(),
+  refundStatus: z.enum(PAYMENT_STATUSES).optional(),
+  search: z.string().optional(),
   merchantId: z.string().optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),

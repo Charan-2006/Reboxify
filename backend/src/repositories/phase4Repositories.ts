@@ -386,6 +386,19 @@ export class MongoosePassportRepository implements PassportRepository {
         { new: true, session: session ?? undefined }
       ).lean();
       orderUpdated = Boolean(updatedOrder);
+      if (updatedOrder) {
+        await SearchOutboxModel.create(
+          [
+            {
+              entityType: 'order',
+              entityId: updatedOrder._id.toString(),
+              operation: 'UPSERT',
+              status: 'PENDING',
+            },
+          ],
+          { session: session ?? undefined }
+        );
+      }
     }
 
     return {

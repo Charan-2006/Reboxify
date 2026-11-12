@@ -23,11 +23,17 @@ import { PassportViewerModal } from '../components/PassportViewerModal';
 import { QrLabelModal } from '../components/QrLabelModal';
 import { ReturnDetailModal } from '../components/ReturnDetailModal';
 import { ReturnEvidenceUploader } from '../components/ReturnEvidenceUploader';
+import { ReturnsManagementSection } from '../components/ReturnsManagementSection';
 import { SystemStatusBanner } from '../components/SystemStatusBanner';
+import { OperationalAiPanel } from '../components/ai/OperationalAiPanel';
+import { PackagesGrid } from '../components/grids/PackagesGrid';
+import { PickupSchedulerPanel } from '../components/scheduler/PickupSchedulerPanel';
+import { assistReturnInspection } from '../api/searchAndAi';
 import { useAuth } from '../contexts/AuthContext';
 import {
   DeliveryPartnerSummary,
   DigitalPassportView,
+  InspectionAssistResponse,
   InspectionCondition,
   PackageDto,
   QrLabelData,
@@ -80,6 +86,9 @@ const CollectionCentrePortal: React.FC = () => {
   const [inspectDamageReason, setInspectDamageReason] = useState('');
   const [inspectNotes, setInspectNotes] = useState('');
   const [inspectDisputed, setInspectDisputed] = useState(false);
+  const [inspectAiAssist, setInspectAiAssist] = useState<InspectionAssistResponse | null>(null);
+  const [inspectAiLoading, setInspectAiLoading] = useState(false);
+  const [inspectAiError, setInspectAiError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const [activeLabel, setActiveLabel] = useState<QrLabelData | null>(null);
@@ -87,6 +96,7 @@ const CollectionCentrePortal: React.FC = () => {
   const [passportLoading, setPassportLoading] = useState(false);
   const [passportError, setPassportError] = useState<string | null>(null);
   const [selectedReturnModal, setSelectedReturnModal] = useState<ReturnDto | null>(null);
+  const [gridRefreshKey, setGridRefreshKey] = useState(0);
 
   const loadWorkspace = useCallback(async () => {
     setLoading(true);
@@ -100,6 +110,7 @@ const CollectionCentrePortal: React.FC = () => {
       setInventory(invRes.items);
       setReturnsList(retRes.items);
       setPartners(partnerRes.partners);
+      setGridRefreshKey((k) => k + 1);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load collection centre workspace.');
     } finally {
@@ -573,13 +584,76 @@ const CollectionCentrePortal: React.FC = () => {
                 </label>
               </div>
 
-              <button
-                type="submit"
-                disabled={busyId === inspectFormTarget.id}
-                className="px-5 py-2.5 rounded-xl bg-indigo-600 text-white font-black uppercase tracking-widest disabled:opacity-50"
-              >
-                Save Deterministic Inspection
-              </button>
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="submit"
+                  disabled={busyId === inspectFormTarget.id}
+                  className="px-5 py-2.5 rounded-xl bg-indigo-600 text-white font-black uppercase tracking-widest disabled:opacity-50"
+                >
+                  Save Deterministic Inspection
+                </button>
+                <button
+                  type="button"
+                  disabled={inspectAiLoading}
+                  onClick={async () => {
+                    setInspectAiLoading(true);
+                    setInspectAiError(null);
+                    try {
+                      const res = await assistReturnInspection(inspectFormTarget.id);
+                      setInspectAiAssist(res);
+                    } catch (err) {
+                      setInspectAiError(
+                        err instanceof ApiError ? err.message : 'AI inspection assist failed.'
+                      );
+                    } finally {
+                      setInspectAiLoading(false);
+                    }
+                  }}
+                  className="px-4 py-2.5 rounded-xl border border-indigo-400/50 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 font-bold disabled:opacity-50"
+                >
+                  {inspectAiLoading ? 'Analyzing...' : 'AI Inspection Summary (Advisory)'}
+                </button>
+              </div>
+              {inspectAiError && (
+                <p className="text-rose-600 font-semibold">{inspectAiError}</p>
+              )}
+              {inspectAiAssist && inspectAiAssist.returnId === inspectFormTarget.id && (
+                <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-indigo-300/60 dark:border-indigo-700/60 space-y-2 text-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-black uppercase text-[10px] text-indigo-600 dark:text-indigo-400">
+                      Gemini Advisory Inspection Assist ({inspectAiAssist.aiStatus})
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 font-bold text-[10px]">
+                      Refund Control Locked (Human + PayPal Only)
+                    </span>
+                  </div>
+                  {inspectAiAssist.inspectionSummary ? (
+                    <>
+                      <p className="text-slate-700 dark:text-slate-200">
+                        {inspectAiAssist.inspectionSummary}
+                      </p>
+                      {inspectAiAssist.suggestedCondition && (
+                        <p>
+                          <strong>Suggested Condition (Advisory):</strong>{' '}
+                          <span className="font-mono">{inspectAiAssist.suggestedCondition}</span>
+                        </p>
+                      )}
+                      {inspectAiAssist.suggestedNextSteps.length > 0 && (
+                        <ul className="list-disc pl-4 text-slate-600 dark:text-slate-300">
+                          {inspectAiAssist.suggestedNextSteps.map((step, i) => (
+                            <li key={i}>{step}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-amber-700 dark:text-amber-300">
+                      GEMINI_API_KEY is not configured; complete inspection deterministically below.
+                    </p>
+                  )}
+                  <p className="text-[10px] text-slate-500">{inspectAiAssist.advisoryNotice}</p>
+                </div>
+              )}
             </form>
           )}
         </section>
@@ -595,7 +669,7 @@ const CollectionCentrePortal: React.FC = () => {
 
         <section className="p-6 rounded-3xl bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/10 space-y-4">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-lg font-black">Network Packages &amp; QR Credential Controls ({inventory.length})</h2>
+            <h2 className="text-lg font-black">Network Packages &amp; QR Credential Controls</h2>
             <button
               type="button"
               onClick={() => void loadWorkspace()}
@@ -604,84 +678,57 @@ const CollectionCentrePortal: React.FC = () => {
               Refresh Inventory
             </button>
           </div>
-          {loading ? (
-            <p className="text-sm text-slate-400">Loading packages...</p>
-          ) : inventory.length === 0 ? (
-            <p className="text-sm text-slate-400">No packages found.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="text-xs uppercase text-slate-400 border-b border-slate-200 dark:border-white/10">
-                    <th className="py-2 pr-4">Package ID</th>
-                    <th className="py-2 pr-4">Status</th>
-                    <th className="py-2 pr-4">Custodian</th>
-                    <th className="py-2 pr-4">QR State</th>
-                    <th className="py-2 pr-4">Reuses</th>
-                    <th className="py-2 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-white/5 text-xs">
-                  {inventory.map((pkg) => (
-                    <tr key={pkg.id}>
-                      <td className="py-2.5 pr-4 font-mono font-bold">{pkg.packageId}</td>
-                      <td className="py-2.5 pr-4 font-mono">{pkg.status}</td>
-                      <td className="py-2.5 pr-4">
-                        {pkg.currentCustodian.custodianType} · {pkg.currentCustodian.label}
-                      </td>
-                      <td className="py-2.5 pr-4 font-mono">
-                        v{pkg.qrTokenVersion ?? 1} · {pkg.qrRevoked ? 'REVOKED' : 'ACTIVE'}
-                      </td>
-                      <td className="py-2.5 pr-4 font-mono">{pkg.reuseCount}</td>
-                      <td className="py-2.5 text-right space-x-1.5 whitespace-nowrap">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedPackageId(pkg.packageId)}
-                          className="px-2.5 py-1 rounded-lg bg-teal-600 text-white font-bold"
-                        >
-                          Scan
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void handleOpenPassport(pkg.packageId)}
-                          className="px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 font-bold"
-                        >
-                          Passport
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void handleReprint(pkg.packageId)}
-                          className="px-2.5 py-1 rounded-lg bg-indigo-600 text-white font-bold"
-                        >
-                          Reprint QR
-                        </button>
-                        {!pkg.qrRevoked && (
-                          <button
-                            type="button"
-                            onClick={() => void handleRevoke(pkg.packageId)}
-                            className="px-2.5 py-1 rounded-lg bg-rose-600 text-white font-bold"
-                          >
-                            Revoke
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          <PackagesGrid
+            refreshKey={gridRefreshKey}
+            onViewPassport={(pkgId) => void handleOpenPassport(pkgId)}
+            onSelectForScan={(pkgId) => setSelectedPackageId(pkgId)}
+          />
+          {inventory.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 pt-2 text-xs text-slate-500">
+              <span>Quick QR Credential Controls:</span>
+              {inventory.slice(0, 6).map((pkg) => (
+                <React.Fragment key={pkg.id}>
+                  <button
+                    type="button"
+                    onClick={() => void handleReprint(pkg.packageId)}
+                    className="px-2.5 py-1 rounded-lg bg-indigo-600 text-white font-bold"
+                  >
+                    Reprint {pkg.packageId}
+                  </button>
+                  {!pkg.qrRevoked && (
+                    <button
+                      type="button"
+                      onClick={() => void handleRevoke(pkg.packageId)}
+                      className="px-2.5 py-1 rounded-lg bg-rose-600 text-white font-bold"
+                    >
+                      Revoke {pkg.packageId}
+                    </button>
+                  )}
+                </React.Fragment>
+              ))}
             </div>
           )}
         </section>
 
-        <section className="p-6 rounded-3xl bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/10 space-y-2">
-          <span className="inline-block px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-amber-500/10 text-amber-700 dark:text-amber-400">
-            Pending Phase 7 API
-          </span>
-          <h2 className="text-lg font-black tracking-tight">AG Grid Operational Ledger &amp; CSV Export</h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-            Server-side paginated AG Grid Community cleaning/quarantine/return tables with CSV export connect in Phase 7.
-          </p>
+        <section className="p-6 rounded-3xl bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/10">
+          <ReturnsManagementSection
+            title="Centre Returns & Inspection Grid"
+            partners={partners}
+            canApprove={true}
+            refreshKey={gridRefreshKey}
+            onUpdated={loadWorkspace}
+          />
         </section>
+
+        <section className="p-6 rounded-3xl bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/10">
+          <PickupSchedulerPanel
+            mode="COLLECTION_CENTRE"
+            refreshKey={gridRefreshKey}
+            onPickupChanged={loadWorkspace}
+          />
+        </section>
+
+        <OperationalAiPanel title="Centre Gemini Inspection & Turnaround Insights" />
       </main>
 
       <QrLabelModal label={activeLabel} onClose={() => setActiveLabel(null)} />

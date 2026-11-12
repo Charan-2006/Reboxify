@@ -39,6 +39,14 @@ services:
         sync: false
       - key: ELASTICSEARCH_API_KEY
         sync: false
+      - key: ELASTICSEARCH_USERNAME
+        sync: false
+      - key: ELASTICSEARCH_PASSWORD
+        sync: false
+      - key: ELASTICSEARCH_INDEX_PREFIX
+        value: reboxify
+      - key: AI_RATE_LIMIT_MAX_PER_MIN
+        value: "20"
 
   - type: worker
     name: reboxify-worker
@@ -83,6 +91,14 @@ services:
         sync: false
       - key: ELASTICSEARCH_API_KEY
         sync: false
+      - key: ELASTICSEARCH_USERNAME
+        sync: false
+      - key: ELASTICSEARCH_PASSWORD
+        sync: false
+      - key: ELASTICSEARCH_INDEX_PREFIX
+        value: reboxify
+      - key: AI_RATE_LIMIT_MAX_PER_MIN
+        value: "20"
 
   - type: web
     name: reboxify-web

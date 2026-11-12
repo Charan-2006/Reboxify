@@ -37,9 +37,12 @@ const allocateBody = z.object({
 const listOrdersQuery = z.object({
   merchantId: z.string().optional(),
   status: z.enum(ORDER_STATUSES).optional(),
+  search: z.string().optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
-  sortBy: z.enum(['orderNumber', 'status', 'createdAt', 'updatedAt']).optional(),
+  sortBy: z
+    .enum(['orderNumber', 'status', 'grandTotal', 'depositTotal', 'createdAt', 'updatedAt'])
+    .optional(),
   sortDir: z.enum(['asc', 'desc']).optional(),
 });
 

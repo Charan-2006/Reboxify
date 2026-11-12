@@ -432,6 +432,7 @@ export class OrderService {
     params: {
       merchantId?: string;
       status?: OrderStatus;
+      search?: string;
       page: number;
       pageSize: number;
       sortBy?: string;

@@ -9,6 +9,7 @@ import { PassportViewerModal } from '../components/PassportViewerModal';
 import { ReturnDetailModal } from '../components/ReturnDetailModal';
 import { ReturnEvidenceUploader } from '../components/ReturnEvidenceUploader';
 import { SystemStatusBanner } from '../components/SystemStatusBanner';
+import { PickupSchedulerPanel } from '../components/scheduler/PickupSchedulerPanel';
 import { useAuth } from '../contexts/AuthContext';
 import {
   DigitalPassportView,
@@ -42,6 +43,7 @@ const DeliveryPartnerApp: React.FC = () => {
   const [passportLoading, setPassportLoading] = useState(false);
   const [passportError, setPassportError] = useState<string | null>(null);
   const [selectedReturnModal, setSelectedReturnModal] = useState<ReturnDto | null>(null);
+  const [gridRefreshKey, setGridRefreshKey] = useState(0);
 
   const loadAssigned = useCallback(async () => {
     setLoading(true);
@@ -53,6 +55,7 @@ const DeliveryPartnerApp: React.FC = () => {
       ]);
       setAssignedPackages(pkgRes.items);
       setAssignedReturns(retRes.items);
+      setGridRefreshKey((k) => k + 1);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load assigned tasks.');
     } finally {
@@ -295,16 +298,14 @@ const DeliveryPartnerApp: React.FC = () => {
           )}
         </section>
 
-        <div className="bg-white dark:bg-white/[0.03] p-6 rounded-3xl border border-slate-200 dark:border-white/10 space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-base font-black">Assigned Pickup Slots &amp; Schedule Sync</h2>
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest bg-amber-500/10 text-amber-700 dark:text-amber-400">
-              Pending Phase 7 API
-            </span>
-          </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-            Scheduled customer return pickup slots, Bryntum-compatible time windows, and doorstep exception reporting connect via <code className="font-mono">GET /api/pickups</code> in Phase 7.
-          </p>
+        <div className="bg-white dark:bg-white/[0.03] p-6 rounded-3xl border border-slate-200 dark:border-white/10">
+          <PickupSchedulerPanel
+            mode="DELIVERY_PARTNER"
+            currentUserId={user?.userId}
+            refreshKey={gridRefreshKey}
+            title="My Assigned Pickup Schedule & QR Collection"
+            onPickupChanged={loadAssigned}
+          />
         </div>
       </main>
 

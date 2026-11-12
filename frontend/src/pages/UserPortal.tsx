@@ -16,11 +16,15 @@ import {
 import { getPayPalPublicConfig, listTransactions } from '../api/phase3';
 import { getPackagePassport } from '../api/phase4';
 import { initiateReturn, listReturns } from '../api/phase5';
+import { listPickupResources } from '../api/pickups';
+import { OrdersGrid } from '../components/grids/OrdersGrid';
+import { TransactionsGrid } from '../components/grids/TransactionsGrid';
 import { useAuth } from '../contexts/AuthContext';
 import {
   BusinessDto,
   DigitalPassportView,
   OrderDto,
+  PartnerAvailabilitySlot,
   PayPalPublicConfig,
   ProductDto,
   ReturnDto,
@@ -54,8 +58,11 @@ const UserPortal: React.FC = () => {
   const [selectedReturnModal, setSelectedReturnModal] = useState<ReturnDto | null>(null);
   const [returnModeByOrderPkg, setReturnModeByOrderPkg] = useState<Record<string, ReturnMode>>({});
   const [returnLocByOrderPkg, setReturnLocByOrderPkg] = useState<Record<string, string>>({});
+  const [pickupSlotsByKey, setPickupSlotsByKey] = useState<Record<string, PartnerAvailabilitySlot[]>>({});
+  const [selectedSlotByKey, setSelectedSlotByKey] = useState<Record<string, string>>({});
   const [submittingReturnKey, setSubmittingReturnKey] = useState<string | null>(null);
   const [creatingOrder, setCreatingOrder] = useState(false);
+  const [gridRefreshKey, setGridRefreshKey] = useState(0);
 
   const loadOrdersAndMerchants = useCallback(async () => {
     setError(null);
@@ -72,6 +79,7 @@ const UserPortal: React.FC = () => {
       setTransactions(txRes.items);
       setReturnsList(retRes.items);
       setPayPalConfig(ppCfg);
+      setGridRefreshKey((k) => k + 1);
       if (bizRes.items[0]) {
         setSelectedMerchantId((prev) => prev || bizRes.items[0].id);
       }
@@ -156,6 +164,25 @@ const UserPortal: React.FC = () => {
     }
   };
 
+  const loadSlotsForKey = async (key: string, serviceZone?: string) => {
+    try {
+      const tomorrow = new Date(Date.now() + 24 * 3600 * 1000).toISOString().slice(0, 10);
+      const res = await listPickupResources({
+        includeSlots: true,
+        serviceZone,
+        date: tomorrow,
+      });
+      const slots = res.availableSlots ?? [];
+      setPickupSlotsByKey((prev) => ({ ...prev, [key]: slots }));
+      if (slots[0]) {
+        const defaultValue = `${slots[0].slotStart}|${slots[0].slotEnd}`;
+        setSelectedSlotByKey((prev) => (prev[key] ? prev : { ...prev, [key]: defaultValue }));
+      }
+    } catch {
+      // ignore optional slot preload failure
+    }
+  };
+
   const handleRequestReturn = async (ord: OrderDto, packageId: string) => {
     const key = `${ord.id}:${packageId}`;
     const mode = returnModeByOrderPkg[key] ?? 'DROP_OFF';
@@ -164,8 +191,13 @@ const UserPortal: React.FC = () => {
     setError(null);
     setNotice(null);
     try {
-      const start = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
-      const end = new Date(Date.now() + 26 * 3600 * 1000).toISOString();
+      const chosenSlotRaw = selectedSlotByKey[key];
+      const [chosenStart, chosenEnd] = chosenSlotRaw ? chosenSlotRaw.split('|') : [];
+      const fallbackStartDate = new Date(Date.now() + 24 * 3600 * 1000);
+      fallbackStartDate.setUTCHours(10, 0, 0, 0);
+      const fallbackEndDate = new Date(fallbackStartDate.getTime() + 2 * 3600 * 1000);
+      const start = chosenStart || fallbackStartDate.toISOString();
+      const end = chosenEnd || fallbackEndDate.toISOString();
       const res = await initiateReturn({
         orderId: ord.id,
         packageId,
@@ -198,16 +230,16 @@ const UserPortal: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-[#020617] text-slate-900 dark:text-slate-100">
-      <header className="sticky top-0 z-50 p-4 md:p-6">
-        <div className="max-w-7xl mx-auto glass-effect dark:bg-slate-900/60 border border-slate-200 dark:border-white/10 rounded-[2rem] px-6 md:px-10 py-4 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-4 cursor-pointer" onClick={() => navigate('/')}>
-            <div className="w-12 h-12 bg-emerald-600 rounded-2xl flex items-center justify-center text-white font-black text-xl shadow-lg">
+    <div className="min-h-screen overflow-x-hidden bg-slate-50 dark:bg-[#020617] text-slate-900 dark:text-slate-100">
+      <header className="sticky top-0 z-50 p-3 sm:p-4 md:p-6">
+        <div className="max-w-7xl mx-auto glass-effect dark:bg-slate-900/60 border border-slate-200 dark:border-white/10 rounded-[2rem] px-4 sm:px-6 md:px-10 py-3 sm:py-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer" onClick={() => navigate('/')}>
+            <div className="w-10 h-10 sm:w-12 sm:h-12 shrink-0 bg-emerald-600 rounded-2xl flex items-center justify-center text-white font-black text-lg sm:text-xl shadow-lg">
               R
             </div>
-            <div>
-              <h1 className="text-xl font-black tracking-tight">Customer Portal</h1>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400">
+            <div className="min-w-0 flex-1">
+              <h1 className="text-base sm:text-xl font-black tracking-tight truncate">Customer Portal</h1>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400 truncate">
                 {user.name} · {user.email}
               </p>
             </div>
@@ -215,7 +247,7 @@ const UserPortal: React.FC = () => {
 
           <button
             onClick={() => void logout()}
-            className="px-6 py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-rose-600"
+            className="shrink-0 px-4 sm:px-6 py-2 sm:py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-rose-600"
           >
             Sign Out
           </button>
@@ -341,9 +373,9 @@ const UserPortal: React.FC = () => {
               <div className="w-11 h-11 rounded-2xl bg-sky-500/10 text-sky-600 dark:text-sky-400 flex items-center justify-center">
                 <UserIcon />
               </div>
-              <h3 className="text-lg font-black">Gemini Assistant (Phase 8)</h3>
+              <h3 className="text-lg font-black">Deterministic Deposit &amp; AI Operations</h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                Natural-language status Q&amp;A and return drafting with user confirmation will appear here in Phase 8.
+                Your PayPal deposit refunds are calculated 100% deterministically by backend inspection rules. ReBoxify centres use audited Gemini summaries only as read-only operational advice.
               </p>
             </div>
           </div>
@@ -408,18 +440,57 @@ const UserPortal: React.FC = () => {
                                 <div className="flex flex-wrap items-center gap-2 pt-1">
                                   <select
                                     value={mode}
-                                    onChange={(e) =>
+                                    onChange={(e) => {
+                                      const nextMode = e.target.value as ReturnMode;
                                       setReturnModeByOrderPkg((prev) => ({
                                         ...prev,
-                                        [key]: e.target.value as ReturnMode,
-                                      }))
-                                    }
+                                        [key]: nextMode,
+                                      }));
+                                      if (nextMode === 'PICKUP') {
+                                        void loadSlotsForKey(key, ord.shippingReference.zone);
+                                      }
+                                    }}
                                     className="px-2 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-[11px]"
                                   >
                                     <option value="DROP_OFF">Partner Locker / Store Drop-Off</option>
                                     <option value="PICKUP">Doorstep Pickup</option>
                                     <option value="NEXT_DELIVERY_SWAP">Next-Delivery Swap</option>
                                   </select>
+                                  {mode === 'PICKUP' && (
+                                    <select
+                                      aria-label={`Select pickup slot for ${p.packageId}`}
+                                      value={selectedSlotByKey[key] ?? ''}
+                                      onChange={(e) =>
+                                        setSelectedSlotByKey((prev) => ({
+                                          ...prev,
+                                          [key]: e.target.value,
+                                        }))
+                                      }
+                                      className="px-2 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-[11px]"
+                                    >
+                                      {(pickupSlotsByKey[key] ?? []).length === 0 ? (
+                                        <option value="">Default Next-Day 10:00-12:00 UTC</option>
+                                      ) : (
+                                        (pickupSlotsByKey[key] ?? []).map((slot) => {
+                                          const val = `${slot.slotStart}|${slot.slotEnd}`;
+                                          return (
+                                            <option key={val} value={val}>
+                                              {new Date(slot.slotStart).toLocaleTimeString([], {
+                                                hour: '2-digit',
+                                                minute: '2-digit',
+                                              })}
+                                              –
+                                              {new Date(slot.slotEnd).toLocaleTimeString([], {
+                                                hour: '2-digit',
+                                                minute: '2-digit',
+                                              })}{' '}
+                                              ({slot.availablePartners} partners free)
+                                            </option>
+                                          );
+                                        })
+                                      )}
+                                    </select>
+                                  )}
                                   <input
                                     placeholder={
                                       mode === 'DROP_OFF'
@@ -517,6 +588,14 @@ const UserPortal: React.FC = () => {
               ))}
             </div>
           )}
+        </section>
+
+        <section className="p-8 rounded-3xl bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/10 space-y-4">
+          <h2 className="text-xl font-black">Orders &amp; Deposit Payments Explorer (AG Grid)</h2>
+          <div className="space-y-6">
+            <OrdersGrid refreshKey={gridRefreshKey} height={320} />
+            <TransactionsGrid refreshKey={gridRefreshKey} height={320} />
+          </div>
         </section>
       </main>
 

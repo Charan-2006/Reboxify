@@ -209,6 +209,7 @@ export class PackagingService {
       status?: PackageStatus;
       packageClass?: PackageClass;
       ownerType?: PackageOwnerType;
+      condition?: PackageDto['condition'];
       search?: string;
       page: number;
       pageSize: number;

@@ -13,5 +13,10 @@
     "typecheck": "npm --prefix backend run typecheck && npm --prefix frontend run typecheck",
     "test:backend": "npm --prefix backend test",
     "test": "npm run test:backend"
-  }
+  },
+  "main": "index.js",
+  "devDependencies": {},
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
 }

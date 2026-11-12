@@ -35,10 +35,11 @@ const listInventoryQuery = z.object({
   status: z.enum(PACKAGE_STATUSES).optional(),
   packageClass: z.enum(PACKAGE_CLASSES).optional(),
   ownerType: z.enum(PACKAGE_OWNER_TYPES).optional(),
+  condition: z.enum(['NEW', 'GOOD', 'MINOR_WEAR', 'DAMAGED', 'CONTAMINATED']).optional(),
   search: z.string().optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
-  sortBy: z.enum(['packageId', 'packageClass', 'status', 'reuseCount', 'updatedAt']).optional(),
+  sortBy: z.enum(['packageId', 'packageClass', 'status', 'condition', 'reuseCount', 'updatedAt']).optional(),
   sortDir: z.enum(['asc', 'desc']).optional(),
 });
 

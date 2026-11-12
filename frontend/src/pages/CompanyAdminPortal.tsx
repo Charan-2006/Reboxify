@@ -6,6 +6,11 @@ import { PassportViewerModal } from '../components/PassportViewerModal';
 import { QrLabelModal } from '../components/QrLabelModal';
 import { ReturnsManagementSection } from '../components/ReturnsManagementSection';
 import { SystemStatusBanner } from '../components/SystemStatusBanner';
+import { OperationalAiPanel } from '../components/ai/OperationalAiPanel';
+import { InventoryGrid } from '../components/grids/InventoryGrid';
+import { OrdersGrid } from '../components/grids/OrdersGrid';
+import { TransactionsGrid } from '../components/grids/TransactionsGrid';
+import { PickupSchedulerPanel } from '../components/scheduler/PickupSchedulerPanel';
 import { ApiError } from '../api/client';
 import {
   allocateOrderPackage,
@@ -70,6 +75,7 @@ const CompanyAdminPortal: React.FC = () => {
   const [passportModal, setPassportModal] = useState<DigitalPassportView | null>(null);
   const [passportLoading, setPassportLoading] = useState(false);
   const [passportError, setPassportError] = useState<string | null>(null);
+  const [gridRefreshKey, setGridRefreshKey] = useState(0);
 
   // SKU Form
   const [skuForm, setSkuForm] = useState({
@@ -124,6 +130,7 @@ const CompanyAdminPortal: React.FC = () => {
       setReturnsList(retRes.items);
       setTransactions(txRes.items);
       setPartners(partnerRes.partners);
+      setGridRefreshKey((k) => k + 1);
       if (prodRes.items[0]) {
         setOrderForm((prev) => (prev.productId ? prev : { ...prev, productId: prodRes.items[0].id }));
       }
@@ -657,42 +664,38 @@ const CompanyAdminPortal: React.FC = () => {
 
             <section className="p-6 rounded-3xl bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/10 space-y-4">
               <h2 className="text-lg font-black">
-                PayPal Sandbox Transactions &amp; Deposit Allocations ({transactions.length})
+                Merchant Orders Ledger (AG Grid &bull; Sorting / Filtering / CSV Export)
               </h2>
-              {transactions.length === 0 ? (
-                <p className="text-sm text-slate-400">No PayPal transactions recorded yet.</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
-                    <thead>
-                      <tr className="text-xs uppercase text-slate-400 border-b border-slate-200 dark:border-white/10">
-                        <th className="py-2 pr-4">PayPal Order ID</th>
-                        <th className="py-2 pr-4">Capture ID</th>
-                        <th className="py-2 pr-4">State</th>
-                        <th className="py-2 pr-4">Deposit Allocation</th>
-                        <th className="py-2 text-right">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-white/5">
-                      {transactions.map((tx) => (
-                        <tr key={tx.id}>
-                          <td className="py-2 pr-4 font-mono text-xs font-bold">{tx.paypalOrderId}</td>
-                          <td className="py-2 pr-4 font-mono text-xs">{tx.captureId || '—'}</td>
-                          <td className="py-2 pr-4 font-mono text-xs">{tx.state}</td>
-                          <td className="py-2 pr-4 text-xs">
-                            {tx.depositAllocations
-                              .map((d) => `${d.packageId}: ${tx.currency} ${d.allocatedDeposit.toFixed(2)}`)
-                              .join(', ')}
-                          </td>
-                          <td className="py-2 text-right font-semibold">
-                            {tx.currency} {tx.amount.toFixed(2)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              <OrdersGrid
+                merchantId={business?.id}
+                refreshKey={gridRefreshKey}
+                renderActions={(ord) =>
+                  ord.allocatedPackages.length === 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleAllocate(ord.id)}
+                      className="px-2.5 py-1 rounded bg-emerald-600 text-white text-[11px] font-bold hover:bg-emerald-500"
+                    >
+                      Allocate
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void handleOpenPassport(ord.allocatedPackages[0].packageId)}
+                      className="px-2.5 py-1 rounded border border-slate-300 dark:border-white/20 text-[11px] font-semibold"
+                    >
+                      Passport
+                    </button>
+                  )
+                }
+              />
+            </section>
+
+            <section className="p-6 rounded-3xl bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/10 space-y-4">
+              <h2 className="text-lg font-black">
+                PayPal Sandbox Transactions &amp; Deposit Allocations ({transactions.length} latest)
+              </h2>
+              <TransactionsGrid merchantId={business?.id} refreshKey={gridRefreshKey} />
             </section>
 
             <PackageScannerPanel
@@ -706,84 +709,65 @@ const CompanyAdminPortal: React.FC = () => {
             />
 
             <section className="p-6 rounded-3xl bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/10 space-y-4">
-              <h2 className="text-lg font-black">Eligible Inventory &amp; Digital Passports ({inventory.length})</h2>
-              {inventory.length === 0 ? (
-                <p className="text-sm text-slate-400">No eligible inventory found.</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
-                    <thead>
-                      <tr className="text-xs uppercase text-slate-400 border-b border-slate-200 dark:border-white/10">
-                        <th className="py-2 pr-4">Package ID</th>
-                        <th className="py-2 pr-4">Class</th>
-                        <th className="py-2 pr-4">Owner</th>
-                        <th className="py-2 pr-4">Custodian</th>
-                        <th className="py-2 pr-4">Status</th>
-                        <th className="py-2 pr-4">QR State</th>
-                        <th className="py-2 text-right">Passport &amp; QR</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-white/5">
-                      {inventory.map((pkg) => (
-                        <tr key={pkg.id}>
-                          <td className="py-2 pr-4 font-mono font-bold">{pkg.packageId}</td>
-                          <td className="py-2 pr-4">{pkg.packageClass}</td>
-                          <td className="py-2 pr-4 text-xs">{pkg.ownerType}</td>
-                          <td className="py-2 pr-4 text-xs">{pkg.currentCustodian.label}</td>
-                          <td className="py-2 pr-4 font-mono text-xs">{pkg.status}</td>
-                          <td className="py-2 pr-4 font-mono text-xs">
-                            v{pkg.qrTokenVersion ?? 1} · {pkg.qrRevoked ? 'REVOKED' : 'ACTIVE'}
-                          </td>
-                          <td className="py-2 text-right space-x-1.5 whitespace-nowrap text-xs">
-                            <button
-                              type="button"
-                              onClick={() => void handleOpenPassport(pkg.packageId)}
-                              className="px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 font-bold"
-                            >
-                              Passport
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setSelectedScanPkgId(pkg.packageId)}
-                              className="px-2.5 py-1 rounded-lg bg-emerald-600 text-white font-bold"
-                            >
-                              Scan
-                            </button>
-                            {user.role === 'MERCHANT_ADMIN' && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => void handleReprintQr(pkg.packageId)}
-                                  className="px-2.5 py-1 rounded-lg bg-indigo-600 text-white font-bold"
-                                >
-                                  Reprint QR
-                                </button>
-                                {!pkg.qrRevoked && (
-                                  <button
-                                    type="button"
-                                    onClick={() => void handleRevokeQr(pkg.packageId)}
-                                    className="px-2.5 py-1 rounded-lg bg-rose-600 text-white font-bold"
-                                  >
-                                    Revoke
-                                  </button>
-                                )}
-                              </>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+              <h2 className="text-lg font-black">
+                Eligible Inventory &amp; Digital Passports ({inventory.length} latest)
+              </h2>
+              <InventoryGrid
+                merchantId={business?.id}
+                refreshKey={gridRefreshKey}
+                onViewPassport={(pkgId) => void handleOpenPassport(pkgId)}
+                onSelectForScan={(pkgId) => setSelectedScanPkgId(pkgId)}
+              />
+              {inventory.length > 0 && user.role === 'MERCHANT_ADMIN' && (
+                <div className="flex flex-wrap items-center gap-2 pt-2 text-xs text-slate-500">
+                  <span>Quick QR Actions:</span>
+                  {inventory.slice(0, 6).map((pkg) => (
+                    <React.Fragment key={pkg.id}>
+                      <button
+                        type="button"
+                        onClick={() => void handleReprintQr(pkg.packageId)}
+                        className="px-2.5 py-1 rounded-lg bg-indigo-600 text-white font-bold"
+                      >
+                        Reprint {pkg.packageId}
+                      </button>
+                      {!pkg.qrRevoked && (
+                        <button
+                          type="button"
+                          onClick={() => void handleRevokeQr(pkg.packageId)}
+                          className="px-2.5 py-1 rounded-lg bg-rose-600 text-white font-bold"
+                        >
+                          Revoke {pkg.packageId}
+                        </button>
+                      )}
+                    </React.Fragment>
+                  ))}
                 </div>
               )}
             </section>
 
             <ReturnsManagementSection
               title="Merchant Returns, Inspection Outcomes & Partial Deposit Refunds"
+              merchantId={business?.id}
               returnsList={returnsList}
               partners={partners}
               canApprove={user.role === 'MERCHANT_ADMIN'}
+              refreshKey={gridRefreshKey}
               onUpdated={loadData}
+            />
+
+            <section className="p-6 rounded-3xl bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/10">
+              <PickupSchedulerPanel
+                mode="MERCHANT"
+                merchantId={business?.id}
+                refreshKey={gridRefreshKey}
+                title="Merchant Return Pickups & Partner Schedule"
+                onPickupChanged={loadData}
+              />
+            </section>
+
+            <OperationalAiPanel
+              title="Merchant Gemini Reuse & Return Insights"
+              merchantId={business?.id}
             />
           </>
         )}

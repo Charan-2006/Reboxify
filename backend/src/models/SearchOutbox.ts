@@ -1,13 +1,14 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
 export interface ISearchOutbox extends Document {
-  entityType: 'passport' | 'package_event' | 'return' | 'payment';
+  entityType: 'order' | 'passport' | 'package_event' | 'return' | 'payment';
   entityId: string;
   operation: 'UPSERT' | 'DELETE';
   attemptCount: number;
   status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
   lastError?: string;
   nextRetryAt: Date;
+  processedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -16,7 +17,7 @@ const searchOutboxSchema = new Schema<ISearchOutbox>(
   {
     entityType: {
       type: String,
-      enum: ['passport', 'package_event', 'return', 'payment'],
+      enum: ['order', 'passport', 'package_event', 'return', 'payment'],
       required: true,
     },
     entityId: { type: String, required: true },
@@ -30,6 +31,7 @@ const searchOutboxSchema = new Schema<ISearchOutbox>(
     },
     lastError: { type: String },
     nextRetryAt: { type: Date, default: Date.now },
+    processedAt: { type: Date },
   },
   { timestamps: true, collection: 'searchOutbox' }
 );

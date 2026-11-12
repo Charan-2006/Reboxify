@@ -633,6 +633,7 @@ export class PaymentService {
     params: {
       merchantId?: string;
       state?: PaymentStatus;
+      search?: string;
       page: number;
       pageSize: number;
       sortBy?: string;

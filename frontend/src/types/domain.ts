@@ -52,6 +52,20 @@ export interface HealthResponse {
     elasticsearchConfigured: boolean;
     pickupSchedulerConfigured?: boolean;
     bryntumSchedulerMode: string;
+    statuses?: {
+      mongodb: string;
+      replicaSet: string;
+      worker: string;
+      paypal: string;
+      paypalWebhook: string;
+      elasticsearch: string;
+      gemini: string;
+      pickupScheduler: string;
+    };
+    diagnostics?: {
+      elasticsearch?: { status: string; clusterName?: string; message?: string; checkedAt: string };
+      gemini?: { status: string; model?: string; message?: string; checkedAt: string };
+    };
   };
 }
 
@@ -211,6 +225,7 @@ export interface PayPalPublicConfig {
 export interface TransactionDto {
   id: string;
   orderId: string;
+  orderNumber?: string;
   merchantId: string;
   customerId: string;
   paypalOrderId: string;
@@ -224,6 +239,12 @@ export interface TransactionDto {
     refundedAmount: number;
     pendingRefundAmount: number;
   }>;
+  refundSummary?: {
+    refundedTotal: number;
+    pendingTotal: number;
+    latestRefundState?: string;
+    refundCount: number;
+  };
   capturedAt?: string;
   providerStatus?: string;
   createdAt: string;
@@ -353,6 +374,7 @@ export interface ReturnDto {
   id: string;
   returnNumber: string;
   orderId: string;
+  orderNumber?: string;
   packageRef: string;
   packageId: string;
   merchantId: string;
@@ -416,8 +438,112 @@ export interface ReturnDto {
     deductionBreakdown: DeductionItemDto[];
   };
   refundId?: string;
+  refundSummary?: {
+    refundId: string;
+    state: string;
+    amount: number;
+    providerRefundId?: string;
+  };
   createdAt: string;
   updatedAt: string;
+}
+
+export type PickupStatus =
+  | 'UNASSIGNED'
+  | 'ASSIGNED'
+  | 'IN_PROGRESS'
+  | 'COMPLETED'
+  | 'MISSED'
+  | 'RESCHEDULED'
+  | 'CANCELLED';
+
+export interface PickupRescheduleEntryDto {
+  previousStart: string;
+  previousEnd: string;
+  newStart: string;
+  newEnd: string;
+  reason: string;
+  changedBy: string;
+  changedAt: string;
+}
+
+export interface PickupDto {
+  id: string;
+  returnId: string;
+  returnNumber?: string;
+  orderId?: string;
+  orderNumber?: string;
+  packageId: string;
+  merchantId: string;
+  customerId?: string;
+  collectionCenterId?: string;
+  slotStart: string;
+  slotEnd: string;
+  timeZone: string;
+  pickupMethod: ReturnMode;
+  serviceZone: string;
+  addressSummary: string;
+  location?: { lat: number; lng: number };
+  partnerId?: string;
+  assignedPartnerName?: string;
+  status: PickupStatus;
+  rescheduleHistory: PickupRescheduleEntryDto[];
+  missedReason?: string;
+  cancelReason?: string;
+  notes?: string;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PartnerScheduleDto {
+  id?: string;
+  userId: string;
+  displayName: string;
+  email?: string;
+  serviceZones: string[];
+  timeZone: string;
+  workingHours: {
+    startHour: number;
+    endHour: number;
+    daysOfWeek: number[];
+  };
+  unavailablePeriods: Array<{
+    start: string;
+    end: string;
+    reason?: string;
+  }>;
+  dailyCapacity: number;
+  maxConcurrentCapacity: number;
+  bookingLockVersion: number;
+  status: 'ACTIVE' | 'UNAVAILABLE' | 'SUSPENDED';
+}
+
+export interface CollectionCentreDto {
+  id: string;
+  code: string;
+  name: string;
+  operatorUserId: string;
+  address: string;
+  serviceZones: string[];
+  hours: string;
+  capacity: number;
+  currentWorkload: number;
+  status: 'ACTIVE' | 'FULL' | 'OFFLINE';
+}
+
+export interface PartnerAvailabilitySlot {
+  slotStart: string;
+  slotEnd: string;
+  availablePartners: number;
+  serviceZone?: string;
+}
+
+export interface PickupResourcesResponse {
+  roleScope: string;
+  partners: PartnerScheduleDto[];
+  collectionCentres: CollectionCentreDto[];
+  availableSlots?: PartnerAvailabilitySlot[];
 }
 
 export interface RefundDto {
@@ -440,4 +566,102 @@ export interface RefundDto {
   confirmedAt?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface SearchPaginatedResponse<T> extends PaginatedResponse<T> {
+  searchEngine: 'ELASTICSEARCH' | 'MONGODB_FALLBACK';
+  degradedReason?: string;
+}
+
+export interface SearchStatusSnapshot {
+  elasticsearch: {
+    configured: boolean;
+    status: 'NOT_CONFIGURED' | 'CONNECTED' | 'DEGRADED';
+    clusterName?: string;
+    version?: string;
+    message?: string;
+    checkedAt: string;
+  };
+  outbox: {
+    pending: number;
+    processing: number;
+    failed: number;
+    completed: number;
+  };
+  indices: Record<string, number | null>;
+  latestReindexJob?: {
+    jobId: string;
+    status: string;
+    currentEntity?: string;
+    processedCounts: Record<string, number>;
+    failedCount: number;
+    lastError?: string;
+    startedAt: string;
+    finishedAt?: string;
+  };
+}
+
+export interface OperationalMetricsSnapshot {
+  scope: 'NETWORK' | 'MERCHANT';
+  merchantId?: string;
+  generatedAt: string;
+  packages: {
+    total: number;
+    availableForReuse: number;
+    cleaningCount: number;
+    repairOrQuarantineCount: number;
+    withCustomerOrReturnCount: number;
+    totalReuseCycles: number;
+    averageReuseCycles: number;
+    statusBreakdown: Record<string, number>;
+    availableByClass: Record<string, number>;
+  };
+  returns: {
+    total: number;
+    pendingInspectionCount: number;
+    approvedCount: number;
+    rejectedCount: number;
+    lateReturnCount: number;
+    disputedCount: number;
+    conditionBreakdown: Record<string, number>;
+  };
+  pickups: {
+    total: number;
+    unassignedCount: number;
+    missedCount: number;
+    completedCount: number;
+    partnerWorkload: Array<{ partnerName: string; activeCount: number }>;
+  };
+  orders: {
+    total: number;
+    deliveredCount: number;
+    paidCount: number;
+    placedCount: number;
+  };
+}
+
+export interface OperationalInsightsResponse {
+  aiStatus: 'GENERATED' | 'DISABLED';
+  aiGenerated: boolean;
+  modelName: string;
+  answer: string | null;
+  caveats: string[];
+  recommendations: string[];
+  measuredFacts: OperationalMetricsSnapshot;
+  disclaimer: string;
+}
+
+export interface InspectionAssistResponse {
+  aiStatus: 'GENERATED' | 'DISABLED';
+  aiGenerated: boolean;
+  modelName: string;
+  returnId: string;
+  returnNumber: string;
+  packageId: string;
+  inspectionSummary: string | null;
+  suggestedCondition: InspectionCondition | null;
+  damageCategoriesExplanation: string[];
+  suggestedNextSteps: string[];
+  refundControlLocked: true;
+  advisoryNotice: string;
 }

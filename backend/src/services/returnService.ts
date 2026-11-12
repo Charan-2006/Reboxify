@@ -39,6 +39,7 @@ import {
   AuthPrincipal,
   InspectionCondition,
   PackageStatus,
+  PaymentStatus,
   ReturnMode,
   ReturnStatus,
 } from '../types/domain.js';
@@ -418,6 +419,10 @@ export class ReturnService {
   async listReturns(
     params: {
       status?: ReturnStatus;
+      mode?: ReturnMode;
+      condition?: InspectionCondition;
+      refundStatus?: PaymentStatus;
+      search?: string;
       merchantId?: string;
       page: number;
       pageSize: number;

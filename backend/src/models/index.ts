@@ -14,6 +14,11 @@ export { WebhookEventModel, type IWebhookEvent } from './WebhookEvent.js';
 export { IdempotencyKeyModel, type IIdempotencyKey } from './IdempotencyKey.js';
 export { AiInteractionModel, type IAiInteraction } from './AiInteraction.js';
 export { SearchOutboxModel, type ISearchOutbox } from './SearchOutbox.js';
+export {
+  SearchReindexJobModel,
+  type ISearchReindexJob,
+  type ReindexEntityScope,
+} from './SearchReindexJob.js';
 export { GreenWalletModel, type IGreenWallet } from './GreenWallet.js';
 export { AuditLogModel, type IAuditLog } from './AuditLog.js';
 export { WorkerLeaseModel, type IWorkerLease } from './WorkerLease.js';

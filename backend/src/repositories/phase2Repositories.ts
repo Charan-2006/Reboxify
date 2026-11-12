@@ -241,6 +241,7 @@ export interface PackageRepository {
     status?: PackageStatus;
     packageClass?: PackageClass;
     ownerType?: PackageOwnerType;
+    condition?: PackageDto['condition'];
     search?: string;
     page: number;
     pageSize: number;
@@ -277,6 +278,7 @@ export interface OrderRepository {
     merchantId?: string;
     customerId?: string;
     status?: OrderStatus;
+    search?: string;
     page: number;
     pageSize: number;
     sortBy?: string;
@@ -304,7 +306,7 @@ function ensureDbReady(): void {
 function mapBusiness(doc: any): BusinessDto {
   return {
     id: doc._id.toString(),
-    ownerUserId: doc.ownerUserId.toString(),
+    ownerUserId: doc.ownerUserId ? doc.ownerUserId.toString() : '',
     name: doc.name,
     legalName: doc.legalName,
     slug: doc.slug,
@@ -671,6 +673,7 @@ export class MongoosePackageRepository implements PackageRepository {
     status?: PackageStatus;
     packageClass?: PackageClass;
     ownerType?: PackageOwnerType;
+    condition?: PackageDto['condition'];
     search?: string;
     page: number;
     pageSize: number;
@@ -678,24 +681,45 @@ export class MongoosePackageRepository implements PackageRepository {
     sortDir?: 'asc' | 'desc';
   }): Promise<PaginatedResult<PackageDto>> {
     ensureDbReady();
-    const query: Record<string, unknown> = {};
+    const andClauses: Record<string, unknown>[] = [];
     if (filters.merchantId) {
       const mId = new mongoose.Types.ObjectId(filters.merchantId);
-      query.$or = filters.includeSharedPool
-        ? [{ ownerId: mId }, { ownerType: 'REBOXIFY_POOL' }, { 'currentCustodian.custodianId': filters.merchantId }]
-        : [{ ownerId: mId }, { 'currentCustodian.custodianId': filters.merchantId }];
+      andClauses.push({
+        $or: filters.includeSharedPool
+          ? [
+              { ownerId: mId },
+              { ownerType: 'REBOXIFY_POOL' },
+              { 'currentCustodian.custodianId': filters.merchantId },
+            ]
+          : [{ ownerId: mId }, { 'currentCustodian.custodianId': filters.merchantId }],
+      });
     }
-    if (filters.status) query.status = filters.status;
-    if (filters.packageClass) query.packageClass = filters.packageClass;
-    if (filters.ownerType) query.ownerType = filters.ownerType;
-    if (filters.search) {
-      query.packageId = { $regex: filters.search, $options: 'i' };
+    if (filters.status) andClauses.push({ status: filters.status });
+    if (filters.packageClass) andClauses.push({ packageClass: filters.packageClass });
+    if (filters.ownerType) andClauses.push({ ownerType: filters.ownerType });
+    if (filters.condition) andClauses.push({ condition: filters.condition });
+    if (filters.search?.trim()) {
+      const escaped = filters.search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      andClauses.push({
+        $or: [
+          { packageId: { $regex: escaped, $options: 'i' } },
+          { fulfilmentLocation: { $regex: escaped, $options: 'i' } },
+          { 'currentCustodian.label': { $regex: escaped, $options: 'i' } },
+        ],
+      });
     }
+    const query: Record<string, unknown> =
+      andClauses.length === 0
+        ? {}
+        : andClauses.length === 1
+          ? andClauses[0]
+          : { $and: andClauses };
 
     const allowedSort: Record<string, string> = {
       packageId: 'packageId',
       packageClass: 'packageClass',
       status: 'status',
+      condition: 'condition',
       reuseCount: 'reuseCount',
       updatedAt: 'updatedAt',
     };
@@ -837,6 +861,7 @@ export class MongooseOrderRepository implements OrderRepository {
       ],
       { session: session ?? undefined }
     );
+    await enqueueSearchOutbox([{ entityType: 'order', entityId: doc._id.toString() }], session);
     return mapOrder(doc);
   }
 
@@ -853,6 +878,7 @@ export class MongooseOrderRepository implements OrderRepository {
     merchantId?: string;
     customerId?: string;
     status?: OrderStatus;
+    search?: string;
     page: number;
     pageSize: number;
     sortBy?: string;
@@ -863,10 +889,20 @@ export class MongooseOrderRepository implements OrderRepository {
     if (filters.merchantId) query.merchantId = new mongoose.Types.ObjectId(filters.merchantId);
     if (filters.customerId) query.customerId = new mongoose.Types.ObjectId(filters.customerId);
     if (filters.status) query.status = filters.status;
+    if (filters.search?.trim()) {
+      const escaped = filters.search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      query.$or = [
+        { orderNumber: { $regex: escaped, $options: 'i' } },
+        { 'shippingReference.recipientName': { $regex: escaped, $options: 'i' } },
+        { 'allocatedPackages.packageId': { $regex: escaped, $options: 'i' } },
+      ];
+    }
 
     const allowedSort: Record<string, string> = {
       orderNumber: 'orderNumber',
       status: 'status',
+      grandTotal: 'totals.grandTotal',
+      depositTotal: 'totals.depositTotal',
       createdAt: 'createdAt',
       updatedAt: 'updatedAt',
     };
@@ -920,6 +956,9 @@ export class MongooseOrderRepository implements OrderRepository {
       },
       { new: true, session: session ?? undefined }
     ).lean();
+    if (doc) {
+      await enqueueSearchOutbox([{ entityType: 'order', entityId: doc._id.toString() }], session);
+    }
     return doc ? mapOrder(doc) : null;
   }
 }

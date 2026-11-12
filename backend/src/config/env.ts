@@ -24,6 +24,11 @@ const envSchema = z.object({
   GEMINI_MODEL: z.string().default('gemini-2.5-flash'),
   ELASTICSEARCH_URL: z.string().optional(),
   ELASTICSEARCH_API_KEY: z.string().optional(),
+  ELASTICSEARCH_USERNAME: z.string().optional(),
+  ELASTICSEARCH_PASSWORD: z.string().optional(),
+  ELASTICSEARCH_INDEX_PREFIX: z.string().min(1).max(32).default('reboxify'),
+  ELASTICSEARCH_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(500).max(30000).default(5000),
+  AI_RATE_LIMIT_MAX_PER_MIN: z.coerce.number().int().min(1).max(200).default(20),
   OUTBOX_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(5000),
   RECONCILE_INTERVAL_MS: z.coerce.number().int().positive().default(60000),
   PENDING_RECONCILE_MIN_AGE_MS: z.coerce.number().int().positive().default(120000),
@@ -62,6 +67,11 @@ export interface AppConfig {
   geminiModel: string;
   elasticsearchUrl?: string;
   elasticsearchApiKey?: string;
+  elasticsearchUsername?: string;
+  elasticsearchPassword?: string;
+  elasticsearchIndexPrefix: string;
+  elasticsearchRequestTimeoutMs: number;
+  aiRateLimitMaxPerMin: number;
   outboxPollIntervalMs: number;
   reconcileIntervalMs: number;
   pendingReconcileMinAgeMs: number;
@@ -131,6 +141,9 @@ export function loadConfig(
   const geminiApiKey = parsed.GEMINI_API_KEY?.trim() || undefined;
   const elasticsearchUrl = parsed.ELASTICSEARCH_URL?.trim() || undefined;
   const elasticsearchApiKey = parsed.ELASTICSEARCH_API_KEY?.trim() || undefined;
+  const elasticsearchUsername = parsed.ELASTICSEARCH_USERNAME?.trim() || undefined;
+  const elasticsearchPassword = parsed.ELASTICSEARCH_PASSWORD?.trim() || undefined;
+  const elasticsearchIndexPrefix = parsed.ELASTICSEARCH_INDEX_PREFIX.trim().toLowerCase();
 
   const qrPreviousSigningSecret = parsed.QR_PREVIOUS_SIGNING_SECRET?.trim() || undefined;
   const qrPreviousKeyId = qrPreviousSigningSecret
@@ -159,6 +172,11 @@ export function loadConfig(
     geminiModel: parsed.GEMINI_MODEL,
     elasticsearchUrl,
     elasticsearchApiKey,
+    elasticsearchUsername,
+    elasticsearchPassword,
+    elasticsearchIndexPrefix,
+    elasticsearchRequestTimeoutMs: parsed.ELASTICSEARCH_REQUEST_TIMEOUT_MS,
+    aiRateLimitMaxPerMin: parsed.AI_RATE_LIMIT_MAX_PER_MIN,
     outboxPollIntervalMs: parsed.OUTBOX_POLL_INTERVAL_MS,
     reconcileIntervalMs: parsed.RECONCILE_INTERVAL_MS,
     pendingReconcileMinAgeMs: parsed.PENDING_RECONCILE_MIN_AGE_MS,

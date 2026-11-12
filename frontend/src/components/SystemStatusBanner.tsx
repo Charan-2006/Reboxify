@@ -46,20 +46,36 @@ export const SystemStatusBanner: React.FC = () => {
     );
   }
 
+  const statuses = health.integrations.statuses;
+  const geminiStatus = statuses?.gemini ?? (health.integrations.geminiConfigured ? 'CONFIGURED' : 'NOT_CONFIGURED');
+  const esStatus =
+    statuses?.elasticsearch ?? (health.integrations.elasticsearchConfigured ? 'CONFIGURED' : 'NOT_CONFIGURED');
+
   const badges = [
     { label: 'MongoDB', ok: health.database.connected, sub: health.database.replicaSetSupported ? 'Replica Set' : 'Standby/Unconfigured' },
-    { label: 'PayPal Sandbox', ok: health.integrations.paypalSandboxConfigured, sub: health.integrations.paypalSandboxConfigured ? 'Ready' : 'Env Not Set' },
+    { label: 'PayPal Sandbox', ok: health.integrations.paypalSandboxConfigured, sub: health.integrations.paypalSandboxConfigured ? 'Configured' : 'Not Configured' },
     ...(health.worker
       ? [{ label: 'Worker', ok: health.worker.status === 'HEALTHY', sub: health.worker.status }]
       : []),
-    { label: 'Gemini API', ok: health.integrations.geminiConfigured, sub: health.integrations.geminiConfigured ? 'Ready' : 'Env Not Set' },
-    { label: 'Elasticsearch', ok: health.integrations.elasticsearchConfigured, sub: health.integrations.elasticsearchConfigured ? 'Ready' : 'Env Not Set' },
+    {
+      label: 'Gemini API',
+      ok: geminiStatus === 'HEALTHY' || geminiStatus === 'CONFIGURED',
+      sub: geminiStatus,
+    },
+    {
+      label: 'Elasticsearch',
+      ok: esStatus === 'CONNECTED' || esStatus === 'HEALTHY',
+      sub: esStatus,
+    },
     {
       label: 'Scheduler',
       ok:
         health.integrations.bryntumSchedulerMode === 'READY' ||
-        health.integrations.bryntumSchedulerMode === 'CONNECTED',
-      sub: health.integrations.bryntumSchedulerMode,
+        health.integrations.bryntumSchedulerMode === 'CONNECTED' ||
+        health.integrations.bryntumSchedulerMode === 'COMMUNITY_READY',
+      sub: health.integrations.pickupSchedulerConfigured
+        ? `${health.integrations.bryntumSchedulerMode}`
+        : health.integrations.bryntumSchedulerMode,
     },
   ];
 

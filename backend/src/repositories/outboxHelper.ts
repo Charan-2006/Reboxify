@@ -2,7 +2,7 @@ import { ClientSession } from 'mongoose';
 import { SearchOutboxModel } from '../models/index.js';
 
 export interface SearchOutboxEntryInput {
-  entityType: 'passport' | 'package_event' | 'return' | 'payment';
+  entityType: 'order' | 'passport' | 'package_event' | 'return' | 'payment';
   entityId: string;
   operation?: 'UPSERT' | 'DELETE';
   status?: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';

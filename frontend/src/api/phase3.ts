@@ -61,12 +61,24 @@ export function getPaymentById(idOrOrderId: string) {
 }
 
 export function listTransactions(
-  params: { state?: string; page?: number; pageSize?: number } = {}
+  params: {
+    merchantId?: string;
+    state?: string;
+    search?: string;
+    page?: number;
+    pageSize?: number;
+    sortBy?: 'amount' | 'state' | 'createdAt' | 'updatedAt';
+    sortDir?: 'asc' | 'desc';
+  } = {}
 ) {
   const q = new URLSearchParams();
+  if (params.merchantId) q.set('merchantId', params.merchantId);
   if (params.state) q.set('state', params.state);
+  if (params.search) q.set('search', params.search);
   if (params.page) q.set('page', String(params.page));
   if (params.pageSize) q.set('pageSize', String(params.pageSize));
+  if (params.sortBy) q.set('sortBy', params.sortBy);
+  if (params.sortDir) q.set('sortDir', params.sortDir);
   const qs = q.toString() ? `?${q.toString()}` : '';
   return apiRequest<PaginatedResponse<TransactionDto>>(`/api/transactions${qs}`);
 }

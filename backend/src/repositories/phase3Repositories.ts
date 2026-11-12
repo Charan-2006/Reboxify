@@ -1,5 +1,5 @@
 import mongoose, { ClientSession } from 'mongoose';
-import { OrderModel, SearchOutboxModel, TransactionModel } from '../models/index.js';
+import { OrderModel, RefundModel, SearchOutboxModel, TransactionModel } from '../models/index.js';
 import { OrderStatus, PaymentStatus } from '../types/domain.js';
 import { serviceUnavailable } from '../utils/errors.js';
 import { PaginatedResult } from './phase2Types.js';
@@ -14,6 +14,7 @@ export interface DepositAllocationDto {
 export interface TransactionDto {
   id: string;
   orderId: string;
+  orderNumber?: string;
   merchantId: string;
   customerId: string;
   paypalOrderId: string;
@@ -22,6 +23,12 @@ export interface TransactionDto {
   currency: string;
   state: PaymentStatus;
   depositAllocations: DepositAllocationDto[];
+  refundSummary?: {
+    refundedTotal: number;
+    pendingTotal: number;
+    latestRefundState?: PaymentStatus;
+    refundCount: number;
+  };
   approvedAt?: Date;
   capturedAt?: Date;
   lastReconciledAt?: Date;
@@ -52,6 +59,7 @@ export interface TransactionRepository {
     merchantId?: string;
     customerId?: string;
     state?: PaymentStatus;
+    search?: string;
     page: number;
     pageSize: number;
     sortBy?: string;
@@ -209,6 +217,7 @@ export class MongooseTransactionRepository implements TransactionRepository {
     merchantId?: string;
     customerId?: string;
     state?: PaymentStatus;
+    search?: string;
     page: number;
     pageSize: number;
     sortBy?: string;
@@ -219,6 +228,23 @@ export class MongooseTransactionRepository implements TransactionRepository {
     if (filters.merchantId) query.merchantId = new mongoose.Types.ObjectId(filters.merchantId);
     if (filters.customerId) query.customerId = new mongoose.Types.ObjectId(filters.customerId);
     if (filters.state) query.state = filters.state;
+    if (filters.search?.trim()) {
+      const escaped = filters.search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const matchingOrders = await OrderModel.find({
+        orderNumber: { $regex: escaped, $options: 'i' },
+      })
+        .select('_id')
+        .limit(50)
+        .lean();
+      const orderIds = matchingOrders.map((o: any) => o._id);
+      query.$or = [
+        { paypalOrderId: { $regex: escaped, $options: 'i' } },
+        { captureId: { $regex: escaped, $options: 'i' } },
+        { providerStatus: { $regex: escaped, $options: 'i' } },
+        { 'depositAllocations.packageId': { $regex: escaped, $options: 'i' } },
+        ...(orderIds.length > 0 ? [{ orderId: { $in: orderIds } }] : []),
+      ];
+    }
 
     const allowedSort: Record<string, string> = {
       amount: 'amount',
@@ -238,8 +264,55 @@ export class MongooseTransactionRepository implements TransactionRepository {
       TransactionModel.countDocuments(query),
     ]);
 
+    const items = docs.map(mapTransaction);
+    if (items.length > 0) {
+      const orderObjectIds = Array.from(new Set(items.map((t) => t.orderId))).map(
+        (id) => new mongoose.Types.ObjectId(id)
+      );
+      const txObjectIds = items.map((t) => new mongoose.Types.ObjectId(t.id));
+      const [orders, refunds] = await Promise.all([
+        OrderModel.find({ _id: { $in: orderObjectIds } })
+          .select('_id orderNumber')
+          .lean(),
+        RefundModel.find({ transactionId: { $in: txObjectIds } })
+          .select('transactionId state amount updatedAt')
+          .sort({ updatedAt: -1 })
+          .lean(),
+      ]);
+
+      const orderMap = new Map<string, string>(
+        orders.map((o: any) => [o._id.toString(), o.orderNumber as string])
+      );
+      const refundMap = new Map<string, any[]>();
+      for (const rf of refunds as any[]) {
+        const key = rf.transactionId.toString();
+        const arr = refundMap.get(key) ?? [];
+        arr.push(rf);
+        refundMap.set(key, arr);
+      }
+
+      for (const tx of items) {
+        tx.orderNumber = orderMap.get(tx.orderId);
+        const txRefunds = refundMap.get(tx.id) ?? [];
+        const refundedFromAlloc = tx.depositAllocations.reduce(
+          (sum, a) => sum + (a.refundedAmount ?? 0),
+          0
+        );
+        const pendingFromAlloc = tx.depositAllocations.reduce(
+          (sum, a) => sum + (a.pendingRefundAmount ?? 0),
+          0
+        );
+        tx.refundSummary = {
+          refundedTotal: Number(refundedFromAlloc.toFixed(2)),
+          pendingTotal: Number(pendingFromAlloc.toFixed(2)),
+          latestRefundState: txRefunds[0]?.state,
+          refundCount: txRefunds.length,
+        };
+      }
+    }
+
     return {
-      items: docs.map(mapTransaction),
+      items,
       total,
       page: filters.page,
       pageSize: filters.pageSize,
@@ -295,6 +368,17 @@ export class MongooseTransactionRepository implements TransactionRepository {
     await OrderModel.updateOne(
       { _id: new mongoose.Types.ObjectId(orderId) },
       { $set: { status: nextStatus } },
+      { session: session ?? undefined }
+    );
+    await SearchOutboxModel.create(
+      [
+        {
+          entityType: 'order',
+          entityId: orderId,
+          operation: 'UPSERT',
+          status: 'PENDING',
+        },
+      ],
       { session: session ?? undefined }
     );
   }

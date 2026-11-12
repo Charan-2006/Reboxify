@@ -6,6 +6,13 @@ import { PassportViewerModal } from '../components/PassportViewerModal';
 import { QrLabelModal } from '../components/QrLabelModal';
 import { ReturnsManagementSection } from '../components/ReturnsManagementSection';
 import { SystemStatusBanner } from '../components/SystemStatusBanner';
+import { OperationalAiPanel } from '../components/ai/OperationalAiPanel';
+import { ElasticsearchControlCard } from '../components/search/ElasticsearchControlCard';
+import { InventoryGrid } from '../components/grids/InventoryGrid';
+import { OrdersGrid } from '../components/grids/OrdersGrid';
+import { PackagesGrid } from '../components/grids/PackagesGrid';
+import { TransactionsGrid } from '../components/grids/TransactionsGrid';
+import { PickupSchedulerPanel } from '../components/scheduler/PickupSchedulerPanel';
 import { ApiError } from '../api/client';
 import {
   createBusiness,
@@ -67,6 +74,7 @@ const AdminDashboard: React.FC = () => {
   const [passportModal, setPassportModal] = useState<DigitalPassportView | null>(null);
   const [passportLoading, setPassportLoading] = useState(false);
   const [passportError, setPassportError] = useState<string | null>(null);
+  const [gridRefreshKey, setGridRefreshKey] = useState(0);
 
   // Create business form
   const [bizForm, setBizForm] = useState({
@@ -104,6 +112,7 @@ const AdminDashboard: React.FC = () => {
       setReturnsList(retRes.items);
       setTransactions(txRes.items);
       setPartners(partnerRes.partners);
+      setGridRefreshKey((k) => k + 1);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load admin data.');
     } finally {
@@ -483,79 +492,52 @@ const AdminDashboard: React.FC = () => {
 
         <section className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4">
           <h2 className="text-lg font-bold">
-            Network Packaging Inventory ({inventory.length}) — Ownership, Custody &amp; Passports
+            Network Packaging Inventory &amp; Custody ({inventory.length} latest loaded)
           </h2>
-          {inventory.length === 0 ? (
-            <p className="text-sm text-slate-400">No packages registered yet.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="text-xs uppercase text-slate-400 border-b border-slate-100 dark:border-slate-800">
-                    <th className="py-2 pr-4">Package ID</th>
-                    <th className="py-2 pr-4">Class</th>
-                    <th className="py-2 pr-4">Owner</th>
-                    <th className="py-2 pr-4">Current Custodian</th>
-                    <th className="py-2 pr-4">Status</th>
-                    <th className="py-2 pr-4">QR State</th>
-                    <th className="py-2 pr-4 text-right">Deposit</th>
-                    <th className="py-2 text-right">Passport &amp; QR</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {inventory.map((pkg) => (
-                    <tr key={pkg.id}>
-                      <td className="py-3 pr-4 font-mono font-bold">{pkg.packageId}</td>
-                      <td className="py-3 pr-4">{pkg.packageClass}</td>
-                      <td className="py-3 pr-4 text-xs">{pkg.ownerType}</td>
-                      <td className="py-3 pr-4 text-xs">
-                        {pkg.currentCustodian.custodianType} · {pkg.currentCustodian.label}
-                      </td>
-                      <td className="py-3 pr-4 font-mono text-xs">{pkg.status}</td>
-                      <td className="py-3 pr-4 font-mono text-xs">
-                        v{pkg.qrTokenVersion ?? 1} · {pkg.qrRevoked ? 'REVOKED' : 'ACTIVE'}
-                      </td>
-                      <td className="py-3 pr-4 text-right font-semibold">
-                        {pkg.currency} {pkg.depositAmount.toFixed(2)}
-                      </td>
-                      <td className="py-3 text-right space-x-1.5 whitespace-nowrap text-xs">
-                        <button
-                          type="button"
-                          onClick={() => void handleOpenPassport(pkg.packageId)}
-                          className="px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 font-bold"
-                        >
-                          Passport
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedScanPkgId(pkg.packageId)}
-                          className="px-2.5 py-1 rounded-lg bg-emerald-600 text-white font-bold"
-                        >
-                          Scan
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void handleReprintQr(pkg.packageId)}
-                          className="px-2.5 py-1 rounded-lg bg-indigo-600 text-white font-bold"
-                        >
-                          Reprint QR
-                        </button>
-                        {!pkg.qrRevoked && (
-                          <button
-                            type="button"
-                            onClick={() => void handleRevokeQr(pkg.packageId)}
-                            className="px-2.5 py-1 rounded-lg bg-rose-600 text-white font-bold"
-                          >
-                            Revoke
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          <InventoryGrid
+            refreshKey={gridRefreshKey}
+            onViewPassport={(pkgId) => void handleOpenPassport(pkgId)}
+            onSelectForScan={(pkgId) => setSelectedScanPkgId(pkgId)}
+          />
+          {inventory.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 pt-2 text-xs text-slate-500">
+              <span>Quick QR Print/Revoke:</span>
+              {inventory.slice(0, 6).map((pkg) => (
+                <React.Fragment key={pkg.id}>
+                  <button
+                    type="button"
+                    onClick={() => void handleReprintQr(pkg.packageId)}
+                    className="px-2.5 py-1 rounded-lg bg-indigo-600 text-white font-bold"
+                  >
+                    Reprint {pkg.packageId}
+                  </button>
+                  {!pkg.qrRevoked && (
+                    <button
+                      type="button"
+                      onClick={() => void handleRevokeQr(pkg.packageId)}
+                      className="px-2.5 py-1 rounded-lg bg-rose-600 text-white font-bold"
+                    >
+                      Revoke {pkg.packageId}
+                    </button>
+                  )}
+                </React.Fragment>
+              ))}
             </div>
           )}
+        </section>
+
+        <section className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4">
+          <h2 className="text-lg font-bold">Package Lifecycle &amp; QR Custody Registry</h2>
+          <PackagesGrid
+            refreshKey={gridRefreshKey}
+            onViewPassport={(pkgId) => void handleOpenPassport(pkgId)}
+            onSelectForScan={(pkgId) => setSelectedScanPkgId(pkgId)}
+          />
+        </section>
+
+        <section className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4">
+          <h2 className="text-lg font-bold">Network Orders Management</h2>
+          <OrdersGrid refreshKey={gridRefreshKey} />
         </section>
 
         <ReturnsManagementSection
@@ -563,48 +545,28 @@ const AdminDashboard: React.FC = () => {
           returnsList={returnsList}
           partners={partners}
           canApprove={true}
+          refreshKey={gridRefreshKey}
           onUpdated={loadAll}
         />
 
         <section className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4">
-          <h2 className="text-lg font-bold">
-            Network PayPal Sandbox Transactions &amp; Deposit Ledger ({transactions.length})
-          </h2>
-          {transactions.length === 0 ? (
-            <p className="text-sm text-slate-400">No transactions recorded yet.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="text-xs uppercase text-slate-400 border-b border-slate-100 dark:border-slate-800">
-                    <th className="py-2 pr-4">PayPal Order ID</th>
-                    <th className="py-2 pr-4">Capture ID</th>
-                    <th className="py-2 pr-4">State</th>
-                    <th className="py-2 pr-4">Deposit Allocations</th>
-                    <th className="py-2 text-right">Amount</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {transactions.map((tx) => (
-                    <tr key={tx.id}>
-                      <td className="py-3 pr-4 font-mono text-xs font-bold">{tx.paypalOrderId}</td>
-                      <td className="py-3 pr-4 font-mono text-xs">{tx.captureId || '—'}</td>
-                      <td className="py-3 pr-4 font-mono text-xs">{tx.state}</td>
-                      <td className="py-3 pr-4 text-xs">
-                        {tx.depositAllocations
-                          .map((d) => `${d.packageId}: ${tx.currency} ${d.allocatedDeposit.toFixed(2)}`)
-                          .join(', ')}
-                      </td>
-                      <td className="py-3 text-right font-semibold">
-                        {tx.currency} {tx.amount.toFixed(2)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <PickupSchedulerPanel
+            mode="ADMIN"
+            refreshKey={gridRefreshKey}
+            onPickupChanged={loadAll}
+          />
         </section>
+
+        <section className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4">
+          <h2 className="text-lg font-bold">
+            Network PayPal Sandbox Transactions &amp; Deposit Ledger ({transactions.length} latest)
+          </h2>
+          <TransactionsGrid refreshKey={gridRefreshKey} />
+        </section>
+
+        <ElasticsearchControlCard onReindexed={() => void loadAll()} />
+
+        <OperationalAiPanel />
       </main>
 
       <QrLabelModal label={activeLabel} onClose={() => setActiveLabel(null)} />

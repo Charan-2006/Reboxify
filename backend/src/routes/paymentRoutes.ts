@@ -19,6 +19,7 @@ const paypalOrderParam = z.object({
 const listTransactionsQuery = z.object({
   merchantId: z.string().optional(),
   state: z.enum(PAYMENT_STATUSES).optional(),
+  search: z.string().optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
   sortBy: z.enum(['amount', 'state', 'createdAt', 'updatedAt']).optional(),

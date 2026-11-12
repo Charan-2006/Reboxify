@@ -26,13 +26,30 @@ export function initiateReturn(payload: {
 }
 
 export function listReturns(
-  params: { status?: string; merchantId?: string; page?: number; pageSize?: number } = {}
+  params: {
+    status?: string;
+    mode?: ReturnMode;
+    condition?: InspectionCondition;
+    refundStatus?: string;
+    search?: string;
+    merchantId?: string;
+    page?: number;
+    pageSize?: number;
+    sortBy?: 'returnNumber' | 'status' | 'createdAt' | 'updatedAt';
+    sortDir?: 'asc' | 'desc';
+  } = {}
 ) {
   const q = new URLSearchParams();
   if (params.status) q.set('status', params.status);
+  if (params.mode) q.set('mode', params.mode);
+  if (params.condition) q.set('condition', params.condition);
+  if (params.refundStatus) q.set('refundStatus', params.refundStatus);
+  if (params.search) q.set('search', params.search);
   if (params.merchantId) q.set('merchantId', params.merchantId);
   if (params.page) q.set('page', String(params.page));
   if (params.pageSize) q.set('pageSize', String(params.pageSize));
+  if (params.sortBy) q.set('sortBy', params.sortBy);
+  if (params.sortDir) q.set('sortDir', params.sortDir);
   const qs = q.toString() ? `?${q.toString()}` : '';
   return apiRequest<PaginatedResponse<ReturnDto>>(`/api/returns${qs}`);
 }

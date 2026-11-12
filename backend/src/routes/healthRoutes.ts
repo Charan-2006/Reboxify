@@ -3,6 +3,8 @@ import mongoose from 'mongoose';
 import { getDatabaseStatus } from '../config/db.js';
 import { config } from '../config/env.js';
 import { WorkerLeaseModel } from '../models/WorkerLease.js';
+import { SearchEngineClient, defaultSearchEngineClient } from '../services/elasticsearchClient.js';
+import { GeminiModelClient, defaultGeminiClient } from '../services/geminiClient.js';
 
 export interface WorkerHealthSnapshot {
   status: 'HEALTHY' | 'STALE' | 'STOPPED' | 'NOT_DETECTED';
@@ -42,14 +44,32 @@ async function readWorkerHealth(): Promise<WorkerHealthSnapshot> {
   }
 }
 
-export function createHealthRouter(): Router {
+export function createHealthRouter(deps?: {
+  esClient?: SearchEngineClient;
+  geminiClient?: GeminiModelClient;
+}): Router {
   const router = Router();
+  const esClient = deps?.esClient ?? defaultSearchEngineClient;
+  const geminiClient = deps?.geminiClient ?? defaultGeminiClient;
 
   router.get('/health', async (_req, res) => {
     const db = getDatabaseStatus();
     const isProd = config.nodeEnv === 'production';
     const prodDbHealthy = db.connected && db.replicaSetSupported;
-    const worker = await readWorkerHealth();
+
+    const [worker, esHealth, geminiHealth] = await Promise.all([
+      readWorkerHealth(),
+      esClient.checkHealth(false),
+      geminiClient.checkHealth(false),
+    ]);
+
+    const mongodbStatus = !db.connected
+      ? 'DEGRADED'
+      : db.replicaSetSupported
+        ? 'HEALTHY'
+        : isProd
+          ? 'DEGRADED'
+          : 'CONNECTED';
 
     const payload = {
       status: !isProd || prodDbHealthy ? 'ok' : 'degraded',
@@ -61,6 +81,7 @@ export function createHealthRouter(): Router {
       database: {
         connected: db.connected,
         replicaSetSupported: db.replicaSetSupported,
+        status: mongodbStatus,
         ...(db.lastError && !db.connected
           ? {
               statusMessage: isProd
@@ -77,8 +98,34 @@ export function createHealthRouter(): Router {
         paypalWebhookConfigured: config.integrations.paypalWebhookConfigured,
         geminiConfigured: config.integrations.geminiConfigured,
         elasticsearchConfigured: config.integrations.elasticsearchConfigured,
-        pickupSchedulerConfigured: false,
-        bryntumSchedulerMode: 'NOT_IMPLEMENTED',
+        pickupSchedulerConfigured: true,
+        bryntumSchedulerMode: 'COMMUNITY_READY',
+        statuses: {
+          mongodb: mongodbStatus,
+          replicaSet: db.replicaSetSupported ? 'HEALTHY' : db.connected ? 'DEGRADED' : 'DISABLED',
+          worker: worker.status,
+          paypal: config.integrations.paypalConfigured ? 'CONFIGURED' : 'NOT_CONFIGURED',
+          paypalWebhook: config.integrations.paypalWebhookConfigured
+            ? 'CONFIGURED'
+            : 'NOT_CONFIGURED',
+          elasticsearch: esHealth.status,
+          gemini: geminiHealth.status,
+          pickupScheduler: 'COMMUNITY_READY',
+        },
+        diagnostics: {
+          elasticsearch: {
+            status: esHealth.status,
+            ...(esHealth.clusterName ? { clusterName: esHealth.clusterName } : {}),
+            ...(esHealth.message ? { message: esHealth.message } : {}),
+            checkedAt: esHealth.checkedAt,
+          },
+          gemini: {
+            status: geminiHealth.status,
+            model: geminiHealth.model,
+            ...(geminiHealth.message ? { message: geminiHealth.message } : {}),
+            checkedAt: geminiHealth.checkedAt,
+          },
+        },
       },
     };
 
